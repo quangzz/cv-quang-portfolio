@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 48" fill="none">
+  <rect width="48" height="48" rx="12" fill="url(#trianGrad)"/>
+  <path d="M24 38C24 38 11 29.5 11 19.5C11 14.5 14.8 11 19.5 11C22.2 11 24 12.8 24 12.8C24 12.8 25.8 11 28.5 11C33.2 11 37 14.5 37 19.5C37 29.5 24 38 24 38Z" fill="white"/>
+  <path d="M17 22H21L23 17L26 26L28 22H31" stroke="#0D9488" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+  <text x="58" y="25" fill="#0F766E" font-family="Plus Jakarta Sans, sans-serif" font-weight="800" font-size="18" letter-spacing="0.5">TRI ÂN</text>
+  <text x="58" y="39" fill="#64748B" font-family="Plus Jakarta Sans, sans-serif" font-weight="700" font-size="9.5" letter-spacing="0.8">HEALTHCARE AI</text>
+  <defs>
+    <linearGradient id="trianGrad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D9488"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+</svg>

@@ -12,3 +12,16 @@
 - **Khắc phục**:
   1. `Navbar.tsx`: Chỉ giữ Logo `Q` + tên **Phạm Phúc Quang**, rút gọn nhãn menu (`Giới thiệu`, `Kỹ năng`, `Dự án`, `Kinh nghiệm`, `Liên hệ`), thu gọn nút chuyển chế độ (`Tất cả | AI | IT`) và chuyển nút In PDF thành icon button tinh gọn.
   2. `HeroBento.tsx`: Cô đọng phần giới thiệu thành một đoạn tóm tắt ngắn gọn (2–3 câu súc tích) kết hợp 3 thẻ tag điểm mạnh thay vì hiển thị 2 khối văn bản dài.
+
+## 2026-10-22: Sử dụng Logo Thương Hiệu Thật (Official Brand Logos) thay vì Icon SVG tự vẽ
+- **Vấn đề**: Người dùng phản hồi các logo tự vẽ bằng icon SVG chưa giống logo thật của các thương hiệu trên Google.
+- **Khắc phục**:
+  1. Tìm kiếm và tải trực tiếp các file ảnh logo chính thức từ Wikimedia Commons, GitHub Organization và trang chủ của các thương hiệu về thư mục `public/logos/`:
+     - `ge-vernova.svg` (Logo chính thức GE Vernova)
+     - `ensure-gold.svg` & `abbott.svg` (Logo chính thức Ensure & Abbott)
+     - `ai-for-good.png` (Logo chính thức hội nghị AI for Good - ITU)
+     - `nutifood.svg` (Logo chính thức từ `nutifood.com.vn`)
+     - `vietnam-emblem.svg` (Quốc huy Việt Nam chính thức cho Triển lãm Quốc gia 80 Năm)
+     - `urah-network.png` (Logo chính thức của URAH Network)
+     - `tlu-university.jpg` (Logo chính thức Trường Đại học Thủy Lợi - ĐHTL 1959)
+  2. Cập nhật `ProjectBrandLogo.tsx` để hiển thị trực tiếp các hình ảnh logo thật trong khung nền trắng tinh tế giúp giữ nguyên bản sắc màu gốc của từng thương hiệu.
