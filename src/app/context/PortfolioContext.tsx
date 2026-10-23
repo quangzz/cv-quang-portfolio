@@ -48,6 +48,27 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     localStorage.setItem('quang_portfolio_theme', theme);
   }, [theme]);
 
+  // Chuyển sang giao diện sáng khi in PDF và khôi phục lại sau khi in
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      document.documentElement.classList.remove('dark');
+    };
+    const handleAfterPrint = () => {
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+    };
+  }, [theme]);
+
   const toggleTheme = () => {
     setTheme((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
