@@ -110,7 +110,16 @@ function verify(task) {
   const dir = taskDir(task.id);
   const report = path.join(dir, `report-${task.attempts}.md`);
   if (task.status !== 'IN_PROGRESS' || !fs.existsSync(report)) return;
+  const agentStatus = fs.readFileSync(report, 'utf8').trim().split('\n').pop().trim();
+  if (/^STATUS:\s*BLOCKED/.test(agentStatus)) {
+    task.status = 'BLOCKED';
+    return save(task, `Agent dừng: ${agentStatus.replace(/^STATUS:\s*BLOCKED\s*-?\s*/, '')}`);
+  }
   const wt = worktreeOf(task);
+  if (!fs.existsSync(wt)) {
+    task.status = 'BLOCKED';
+    return save(task, `Có báo cáo nhưng không thấy worktree ${wt}`);
+  }
   if (!fs.existsSync(path.join(wt, 'node_modules'))) sh('npm ci --no-audit --no-fund', wt);
   const build = spawnSync(BUILD_CMD, { shell: true, cwd: wt, encoding: 'utf8' });
   const evidence = [
@@ -193,10 +202,18 @@ const commands = {
   dispatch: () => one(dispatch),
   verify: () => one(verify),
   verdict: () => one((t) => setVerdict(t, arg?.toUpperCase())),
+  // Mở lại việc BLOCKED vì lý do bên ngoài (không tính thêm lượt); báo cáo cũ được lưu lại để tra cứu.
+  reopen: () => one((t) => {
+    if (t.status !== 'BLOCKED') throw new Error(`${t.id} đang ${t.status}, không phải BLOCKED`);
+    const report = path.join(taskDir(t.id), `report-${t.attempts}.md`);
+    if (fs.existsSync(report)) fs.renameSync(report, report.replace(/\.md$/, `.blocked-${Date.now()}.md`));
+    t.status = 'IN_PROGRESS';
+    save(t, `Mở lại lượt ${t.attempts}, dán lại prompt-${t.attempts}.md cho Antigravity`);
+  }),
   merge: () => one(merge),
 };
 if (!commands[cmd]) {
-  console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | merge <id>');
+  console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | reopen <id> | merge <id>');
   process.exit(1);
 }
 commands[cmd]();

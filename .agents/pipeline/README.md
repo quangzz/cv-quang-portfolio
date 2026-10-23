@@ -35,6 +35,7 @@ npm run agents -- tick              # chạy 1 vòng: giao việc → tự build
 npm run agents -- watch             # lặp mỗi 60s (đổi bằng WATCH_MS)
 npm run agents -- verdict T-A approved|rework   # Claude ghi kết luận (khi không có claude CLI)
 npm run agents -- merge T-A         # tech lead: merge --no-ff vào stage, build, dọn worktree (không push)
+npm run agents -- reopen T-E         # mở lại việc BLOCKED vì lý do bên ngoài (không tính thêm lượt)
 ```
 
 ## Kênh gửi việc sang Antigravity
