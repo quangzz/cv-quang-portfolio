@@ -29,6 +29,13 @@ const featuredBrands: { key: BrandLogoKey; targetId: string }[] = [
   { key: 'tlu-university', targetId: '#education' },
 ];
 
+const METRIC_SPAN: Record<number, string> = {
+  1: 'lg:col-span-12',
+  2: 'lg:col-span-6',
+  3: 'lg:col-span-4',
+  4: 'lg:col-span-3',
+};
+
 // Tổ hợp Bento mở đầu đã được tối giản, súc tích và thoáng mắt
 export const HeroBento: React.FC = () => {
   const { roleMode } = usePortfolio();
@@ -70,6 +77,8 @@ export const HeroBento: React.FC = () => {
     roleMode === 'it-system'
       ? 'Kỹ sư CNTT chuyên quản trị hạ tầng mạng LAN/Wi-Fi, máy trạm GPU, thiết bị nhúng Jetson Nano, máy chấm công & hệ thống màn LED sự kiện lớn. Cam kết xử lý sự cố (SLA) dưới 3 phút và đảm bảo 100% uptime.'
       : 'Tiên phong ứng dụng Vibe Coding & AI Agents (Antigravity, Cursor) rút ngắn 5 lần chu kỳ phát triển sản phẩm. Chuyên sâu xây dựng hệ thống RAG Chatbot, Generative Video/Face Swap AI, Zalo Mini App và Web tương tác đa màn hình thời gian thực.';
+
+  const metrics = PERSONAL_INFO.highlights.filter((m) => roleMode === 'all' || m.role === roleMode);
 
   return (
     <section id="hero" className="pt-6 pb-12 md:pt-8 md:pb-16">
@@ -221,9 +230,9 @@ export const HeroBento: React.FC = () => {
           </div>
         </BentoCard>
 
-        {/* Hàng 4 Thẻ Chỉ Số Thực Chiến gọn gàng */}
-        {PERSONAL_INFO.highlights.map((metric) => (
-          <BentoCard key={metric.label} className="lg:col-span-3 p-5">
+        {/* Hàng Thẻ Chỉ Số Thực Chiến gọn gàng */}
+        {metrics.map((metric) => (
+          <BentoCard key={metric.label} className={`${METRIC_SPAN[metrics.length] ?? 'lg:col-span-3'} p-5`}>
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 {metric.label}
