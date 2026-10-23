@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Mail,
   Phone,
@@ -22,11 +22,36 @@ export const ContactSection: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [copiedType, setCopiedType] = useState<'phone' | 'email' | null>(null);
+  const [copyError, setCopyError] = useState<'phone' | 'email' | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCopyText = (text: string, type: 'phone' | 'email') => {
-    navigator.clipboard.writeText(text);
-    setCopiedType(type);
-    setTimeout(() => setCopiedType(null), 2000);
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopyText = async (text: string, type: 'phone' | 'email') => {
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable');
+      }
+      await navigator.clipboard.writeText(text);
+      setCopyError(null);
+      setCopiedType(type);
+    } catch {
+      setCopiedType(null);
+      setCopyError(type);
+    }
+    copyTimeoutRef.current = setTimeout(() => {
+      setCopiedType(null);
+      setCopyError(null);
+    }, 2000);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -98,17 +123,21 @@ export const ContactSection: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleCopyText(PERSONAL_INFO.phone, 'phone')}
-                  className="px-3 py-1.5 rounded-xl bg-white text-indigo-700 text-xs font-bold hover:bg-indigo-50 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl bg-white text-indigo-700 text-xs font-bold hover:bg-indigo-50 transition-colors shrink-0 cursor-pointer"
                 >
-                  {copiedType === 'phone' ? (
-                    <span className="inline-flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5 text-emerald-600" /> Đã chép
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <Copy className="w-3.5 h-3.5" /> Sao chép
-                    </span>
-                  )}
+                  <span aria-live="polite" className="inline-flex items-center gap-1">
+                    {copiedType === 'phone' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Đã chép
+                      </>
+                    ) : copyError === 'phone' ? (
+                      <span className="text-red-600">Không sao chép được</span>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" /> Sao chép
+                      </>
+                    )}
+                  </span>
                 </button>
               </div>
 
@@ -133,15 +162,19 @@ export const ContactSection: React.FC = () => {
                   onClick={() => handleCopyText(PERSONAL_INFO.email, 'email')}
                   className="px-3 py-1.5 rounded-xl bg-white text-indigo-700 text-xs font-bold hover:bg-indigo-50 transition-colors shrink-0 cursor-pointer"
                 >
-                  {copiedType === 'email' ? (
-                    <span className="inline-flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5 text-emerald-600" /> Đã chép
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <Copy className="w-3.5 h-3.5" /> Sao chép
-                    </span>
-                  )}
+                  <span aria-live="polite" className="inline-flex items-center gap-1">
+                    {copiedType === 'email' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Đã chép
+                      </>
+                    ) : copyError === 'email' ? (
+                      <span className="text-red-600">Không sao chép được</span>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" /> Sao chép
+                      </>
+                    )}
+                  </span>
                 </button>
               </div>
 
