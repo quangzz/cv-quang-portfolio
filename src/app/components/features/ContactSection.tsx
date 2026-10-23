@@ -192,7 +192,7 @@ export const ContactSection: React.FC = () => {
                 </div>
                 <div>
                   <div className="text-xs text-indigo-200">Địa chỉ hiện tại</div>
-                  <div className="text-sm font-bold">{PERSONAL_INFO.address}</div>
+                  <div className="text-sm font-bold">{PERSONAL_INFO.shortAddress}</div>
                 </div>
               </div>
             </div>
