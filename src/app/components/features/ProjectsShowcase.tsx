@@ -76,6 +76,7 @@ export const ProjectsShowcase: React.FC = () => {
             <button
               key={btn.id}
               type="button"
+              aria-pressed={isActive}
               onClick={() => setSelectedCategory(btn.id)}
               className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                 isActive
