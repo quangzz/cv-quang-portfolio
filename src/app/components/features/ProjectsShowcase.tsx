@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Layers,
   Award,
@@ -27,8 +28,25 @@ const filterButtons: { id: ProjectFilter; label: string }[] = [
 
 // Khu vực trưng bày các dự án thực chiến kèm Logo Thương hiệu & Sơ đồ Kiến trúc (Case Study Cards)
 export const ProjectsShowcase: React.FC = () => {
-  const { roleMode } = usePortfolio();
+  const { roleMode, setRoleMode } = usePortfolio();
   const [selectedCategory, setSelectedCategory] = useState<ProjectFilter>('all');
+
+  // Mở khóa bộ lọc đồng bộ khi bấm vào liên kết neo #project-* để thẻ có mặt trong DOM trước khi cuộn
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const a = (e.target as Element).closest('a[href^="#project-"]');
+      if (a) {
+        flushSync(() => {
+          setSelectedCategory('all');
+          setRoleMode('all');
+        });
+      }
+    };
+    document.addEventListener('click', handler, true);
+    return () => {
+      document.removeEventListener('click', handler, true);
+    };
+  }, [setRoleMode]);
 
   const filteredProjects = PROJECTS_DATA.filter((project) => {
     if (selectedCategory !== 'all' && project.category !== selectedCategory) {
