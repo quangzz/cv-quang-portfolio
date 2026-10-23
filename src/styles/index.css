@@ -7,6 +7,17 @@ html {
   scroll-behavior: smooth;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+section[id],
+[id^="project-"] {
+  scroll-margin-top: 5rem;
+}
+
 /* Họa tiết lưới nền nhẹ nhàng kiểu Bento hiện đại */
 .bg-grid-pattern {
   background-size: 32px 32px;
@@ -38,4 +49,41 @@ html {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(99, 102, 241, 0.6);
+}
+
+/* Định dạng chuẩn cho bản in / xuất hồ sơ PDF */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  header,
+  button,
+  #contact form {
+    display: none !important;
+  }
+
+  .bg-grid-pattern,
+  .dark .bg-grid-pattern {
+    background-image: none !important;
+  }
+
+  .bg-clip-text {
+    background: none !important;
+    color: #3730a3 !important;
+    -webkit-text-fill-color: #3730a3 !important;
+  }
+
+  [class*="backdrop-blur"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
 }

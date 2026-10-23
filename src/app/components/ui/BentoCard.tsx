@@ -17,7 +17,7 @@ export const BentoCard: React.FC<BentoCardProps> = ({
   return (
     <div
       id={id}
-      className={`relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/90 shadow-sm ${
+      className={`relative overflow-hidden break-inside-avoid rounded-3xl bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800/90 shadow-sm ${
         hoverEffect
           ? 'transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/5 hover:border-indigo-300 dark:hover:border-indigo-500/40'
           : ''
