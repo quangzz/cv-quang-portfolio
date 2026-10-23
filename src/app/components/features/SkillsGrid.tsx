@@ -59,6 +59,7 @@ export const SkillsGrid: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 self-start md:self-auto mb-4 md:mb-12">
           <button
             type="button"
+            aria-pressed={roleMode === 'all'}
             onClick={() => setRoleMode('all')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               roleMode === 'all'
@@ -66,10 +67,11 @@ export const SkillsGrid: React.FC = () => {
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'
             }`}
           >
-            Tất cả (6 Nhóm)
+            Tất cả ({SKILL_GROUPS.length} Nhóm)
           </button>
           <button
             type="button"
+            aria-pressed={roleMode === 'ai-engineer'}
             onClick={() => setRoleMode('ai-engineer')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               roleMode === 'ai-engineer'
@@ -81,6 +83,7 @@ export const SkillsGrid: React.FC = () => {
           </button>
           <button
             type="button"
+            aria-pressed={roleMode === 'it-system'}
             onClick={() => setRoleMode('it-system')}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               roleMode === 'it-system'
