@@ -13,6 +13,8 @@ import { BentoCard } from '../ui/BentoCard';
 import { SectionHeader } from '../ui/SectionHeader';
 import { PERSONAL_INFO } from '../../utils/portfolio-data';
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 // Khu vực Liên hệ tuyển dụng & Form gửi email trực tiếp cho Phạm Phúc Quang
 export const ContactSection: React.FC = () => {
   const [senderName, setSenderName] = useState('');
@@ -63,8 +65,7 @@ export const ContactSection: React.FC = () => {
       return;
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(senderEmail.trim())) {
+    if (!EMAIL_REGEX.test(senderEmail.trim())) {
       setErrorMsg('Địa chỉ Email không hợp lệ. Vui lòng kiểm tra lại.');
       return;
     }
@@ -78,6 +79,12 @@ export const ContactSection: React.FC = () => {
     window.location.href = `mailto:${PERSONAL_INFO.email}?subject=${subject}&body=${body}`;
     setIsSubmitted(true);
   };
+
+  const hasError = Boolean(errorMsg);
+  const isNameInvalid = hasError && !senderName.trim();
+  const isEmailInvalid =
+    hasError && (!senderEmail.trim() || !EMAIL_REGEX.test(senderEmail.trim()));
+  const isMessageInvalid = hasError && !message.trim();
 
   return (
     <section id="contact" className="py-14 md:py-20">
@@ -207,14 +214,21 @@ export const ContactSection: React.FC = () => {
 
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             {errorMsg && (
-              <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 text-xs sm:text-sm flex items-center gap-2">
+              <div
+                id="contact-form-error"
+                role="alert"
+                className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 text-xs sm:text-sm flex items-center gap-2"
+              >
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{errorMsg}</span>
               </div>
             )}
 
             {isSubmitted && !errorMsg && (
-              <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs sm:text-sm flex items-center gap-2">
+              <div
+                role="status"
+                className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs sm:text-sm flex items-center gap-2"
+              >
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
                 <span>
                   Đã chuẩn bị nội dung Email! Bạn cũng có thể liên hệ trực tiếp qua SĐT{' '}
@@ -237,6 +251,8 @@ export const ContactSection: React.FC = () => {
                   value={senderName}
                   onChange={(e) => setSenderName(e.target.value)}
                   placeholder="VD: Nguyễn Văn A - HR TechCorp"
+                  aria-invalid={isNameInvalid || undefined}
+                  aria-describedby={isNameInvalid ? 'contact-form-error' : undefined}
                   className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -254,6 +270,8 @@ export const ContactSection: React.FC = () => {
                   value={senderEmail}
                   onChange={(e) => setSenderEmail(e.target.value)}
                   placeholder="hr@company.com"
+                  aria-invalid={isEmailInvalid || undefined}
+                  aria-describedby={isEmailInvalid ? 'contact-form-error' : undefined}
                   className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -300,6 +318,8 @@ export const ContactSection: React.FC = () => {
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Nhập lời nhắn, lịch hẹn phỏng vấn hoặc yêu cầu dự án..."
+                aria-invalid={isMessageInvalid || undefined}
+                aria-describedby={isMessageInvalid ? 'contact-form-error' : undefined}
                 className="w-full px-4 py-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
