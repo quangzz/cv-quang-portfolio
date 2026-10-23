@@ -9,3 +9,6 @@ dist-ssr
 .vercel
 
 *.tsbuildinfo
+
+# Bảng việc pipeline agent (trạng thái runtime, chỉ ở repo chính)
+.agents/tasks/

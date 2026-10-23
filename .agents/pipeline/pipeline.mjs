@@ -1,0 +1,219 @@
+#!/usr/bin/env node
+// Bộ điều phối Claude (reviewer) ↔ Antigravity (agent) cho cv_quang.
+// Luồng: PLANNED → ASSIGNED → IN_PROGRESS → VERIFY → REVIEW → APPROVED → MERGED
+//                       ↑                                  └→ REWORK ─┘ (quá max_attempts → BLOCKED)
+// Chạy: node .agents/pipeline/pipeline.mjs <lệnh> [id]
+import { execSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const BOARD = path.join(REPO, '.agents', 'tasks');
+const BASE_BRANCH = 'stage';
+const BUILD_CMD = 'npm run build';
+
+const sh = (cmd, cwd = REPO) => execSync(cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const taskDir = (id) => path.join(BOARD, id);
+const now = () => new Date().toISOString();
+
+function load(id) {
+  const file = path.join(taskDir(id), 'task.json');
+  if (!fs.existsSync(file)) throw new Error(`Không có task ${id}`);
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+function save(task, note) {
+  task.updated_at = now();
+  if (note) (task.history ??= []).push({ at: task.updated_at, status: task.status, note });
+  fs.writeFileSync(path.join(taskDir(task.id), 'task.json'), JSON.stringify(task, null, 2) + '\n');
+}
+
+function listTasks() {
+  if (!fs.existsSync(BOARD)) return [];
+  return fs.readdirSync(BOARD).filter((d) => fs.existsSync(path.join(BOARD, d, 'task.json'))).sort().map(load);
+}
+
+const worktreeOf = (task) => `${REPO}_worktree_${task.id.toLowerCase()}`;
+
+function ensureWorktree(task) {
+  const wt = worktreeOf(task);
+  if (!fs.existsSync(wt)) {
+    const branchExists = spawnSync('git', ['rev-parse', '--verify', '--quiet', task.branch], { cwd: REPO }).status === 0;
+    sh(branchExists ? `git worktree add "${wt}" ${task.branch}` : `git worktree add -b ${task.branch} "${wt}" ${BASE_BRANCH}`);
+  }
+  return wt;
+}
+
+// Prompt cho agent: đọc từ file để không phải truyền văn bản nhiều dòng qua dòng lệnh Windows.
+function writeAgentPrompt(task, wt) {
+  const dir = taskDir(task.id);
+  const reviewFile = path.join(dir, 'review.md');
+  const rework = task.attempts > 1 && fs.existsSync(reviewFile);
+  const prompt = `# Việc ${task.id}: ${task.title} (lượt ${task.attempts})
+
+Bạn là **Agent** trong luồng 3 bên của dự án cv_quang. Bắt buộc đọc và tuân thủ \`${path.join(wt, 'AGENTS.md')}\`.
+
+- Làm việc DUY NHẤT trong worktree: \`${wt}\` (nhánh \`${task.branch}\`, tạo từ \`${BASE_BRANCH}\`). Không đụng repo chính \`${REPO}\`.
+- Chỉ sửa các file trong phạm vi: ${task.files.map((f) => `\`${f}\``).join(', ')}.
+- Commit nhỏ theo từng mục, đúng chuẩn commit trong AGENTS.md mục 9. KHÔNG merge, push, deploy.
+
+## Đặc tả từ reviewer
+${fs.readFileSync(path.join(dir, 'spec.md'), 'utf8')}
+${rework ? `\n## Phản hồi review lượt trước (phải xử lý hết)\n${fs.readFileSync(reviewFile, 'utf8')}\n` : ''}
+## Kết thúc
+1. Chạy \`${BUILD_CMD}\` trong worktree, ghi lệnh + mã thoát.
+2. Ghi báo cáo đủ 7 mục theo AGENTS.md mục 7 vào file: \`${path.join(dir, `report-${task.attempts}.md`)}\`
+3. Dòng cuối cùng của báo cáo phải là: \`STATUS: DONE\` (hoặc \`STATUS: BLOCKED - <lý do>\` nếu gặp lựa chọn nghiệp vụ). Sau đó DỪNG.
+`;
+  const file = path.join(dir, `prompt-${task.attempts}.md`);
+  fs.writeFileSync(file, prompt);
+  return file;
+}
+
+// Gửi việc sang Antigravity. Ưu tiên: lệnh tự cấu hình → agy CLI → agentapi (chạy trong terminal Antigravity) → thủ công.
+function sendToAntigravity(task, promptFile) {
+  const short = `Đọc và làm đúng toàn bộ yêu cầu trong file ${promptFile}`;
+  const has = (bin) => spawnSync(process.platform === 'win32' ? 'where' : 'which', [bin]).status === 0;
+  let cmd;
+  if (process.env.EXECUTOR_CMD) cmd = process.env.EXECUTOR_CMD.replace('{prompt}', short).replace('{promptFile}', promptFile);
+  else if (has('agy')) cmd = `agy -p "${short}"`;
+  else if (process.env.ANTIGRAVITY_LS_ADDRESS && has('agentapi')) cmd = `agentapi new-conversation --model=pro --title="${task.id}" "${short}"`;
+
+  if (!cmd) {
+    console.log(`\n[THỦ CÔNG] Chưa có kênh tự động tới Antigravity. Dán câu sau vào Antigravity Agent:\n  ${short}\n`);
+    return 'manual';
+  }
+  console.log(`[GỬI] ${cmd}`);
+  const out = spawnSync(cmd, { shell: true, cwd: worktreeOf(task), encoding: 'utf8' });
+  fs.appendFileSync(path.join(taskDir(task.id), 'executor.log'), `\n### ${now()} ${cmd}\n${out.stdout}${out.stderr}`);
+  if (out.status !== 0 || /"error"/.test(out.stdout)) throw new Error(`Gửi việc thất bại: ${(out.stdout + out.stderr).slice(0, 300)}`);
+  return 'sent';
+}
+
+function dispatch(task) {
+  if (!['ASSIGNED', 'REWORK'].includes(task.status)) return;
+  if (task.attempts >= task.max_attempts) {
+    task.status = 'BLOCKED';
+    return save(task, `Quá ${task.max_attempts} lượt, cần tech lead xử lý`);
+  }
+  task.attempts += 1;
+  const wt = ensureWorktree(task);
+  const promptFile = writeAgentPrompt(task, wt);
+  const mode = sendToAntigravity(task, promptFile);
+  task.status = 'IN_PROGRESS';
+  save(task, `Giao Antigravity lượt ${task.attempts} (${mode})`);
+}
+
+// Không tin báo cáo của agent: tự build lại trong worktree và gom bằng chứng cho reviewer.
+function verify(task) {
+  const dir = taskDir(task.id);
+  const report = path.join(dir, `report-${task.attempts}.md`);
+  if (task.status !== 'IN_PROGRESS' || !fs.existsSync(report)) return;
+  const agentStatus = fs.readFileSync(report, 'utf8').trim().split('\n').pop().trim();
+  if (/^STATUS:\s*BLOCKED/.test(agentStatus)) {
+    task.status = 'BLOCKED';
+    return save(task, `Agent dừng: ${agentStatus.replace(/^STATUS:\s*BLOCKED\s*-?\s*/, '')}`);
+  }
+  const wt = worktreeOf(task);
+  if (!fs.existsSync(wt)) {
+    task.status = 'BLOCKED';
+    return save(task, `Có báo cáo nhưng không thấy worktree ${wt}`);
+  }
+  if (!fs.existsSync(path.join(wt, 'node_modules'))) sh('npm ci --no-audit --no-fund', wt);
+  const build = spawnSync(BUILD_CMD, { shell: true, cwd: wt, encoding: 'utf8' });
+  const evidence = [
+    `# Bằng chứng tự kiểm ${task.id} lượt ${task.attempts} (${now()})`,
+    `## git log ${BASE_BRANCH}..HEAD\n\`\`\`\n${sh(`git log ${BASE_BRANCH}..HEAD --oneline`, wt)}\n\`\`\``,
+    `## git status (phải sạch)\n\`\`\`\n${sh('git status --short', wt) || '(sạch)'}\n\`\`\``,
+    `## Ngoài phạm vi\n${outOfScope(task, wt).map((f) => `- ${f}`).join('\n') || '(không có)'}`,
+    `## ${BUILD_CMD} → exit ${build.status}\n\`\`\`\n${(build.stdout + build.stderr).slice(-3000)}\n\`\`\``,
+    `## Diff\n\`\`\`diff\n${sh(`git diff ${BASE_BRANCH}...HEAD`, wt).slice(0, 60000)}\n\`\`\``,
+  ].join('\n\n');
+  fs.writeFileSync(path.join(dir, `verify-${task.attempts}.md`), evidence);
+  task.status = 'REVIEW';
+  save(task, `Build exit ${build.status}, chờ Claude review`);
+}
+
+function outOfScope(task, wt) {
+  const changed = sh(`git diff --name-only ${BASE_BRANCH}...HEAD`, wt).split('\n').filter(Boolean);
+  return changed.filter((f) => !task.files.some((allowed) => f === allowed || f.startsWith(allowed.replace(/\/?$/, '/'))));
+}
+
+// Claude review: tự động nếu có `claude` CLI, nếu không thì để phiên Claude Code đọc verify-*.md và gọi `verdict`.
+function review(task) {
+  if (task.status !== 'REVIEW') return;
+  const has = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['claude']).status === 0;
+  if (!has) return console.log(`[REVIEW] ${task.id}: chờ Claude review (${path.join(taskDir(task.id), `verify-${task.attempts}.md`)})`);
+  const dir = taskDir(task.id);
+  const prompt = `Bạn là Reviewer dự án cv_quang. Đọc ${path.join(dir, 'spec.md')}, ${path.join(dir, `report-${task.attempts}.md`)}, ${path.join(dir, `verify-${task.attempts}.md`)} và code trong ${worktreeOf(task)}. ` +
+    `Đối chiếu từng tiêu chí nghiệm thu. Ghi nhận xét vào ${path.join(dir, 'review.md')} (nếu chưa đạt: liệt kê lỗi + cách sửa cụ thể). ` +
+    `Dòng cuối câu trả lời phải là đúng một trong: VERDICT: APPROVED | VERDICT: REWORK`;
+  const out = spawnSync('claude', ['-p', prompt, '--allowedTools', 'Read,Grep,Glob,Write'], { cwd: worktreeOf(task), encoding: 'utf8' });
+  const v = /VERDICT:\s*(APPROVED|REWORK)/.exec(out.stdout ?? '')?.[1];
+  if (v) setVerdict(task, v);
+}
+
+function setVerdict(task, verdict) {
+  if (task.status !== 'REVIEW') throw new Error(`${task.id} đang ${task.status}, không ở REVIEW`);
+  task.status = verdict;
+  save(task, verdict === 'APPROVED' ? 'Claude duyệt, chờ tech lead merge' : 'Claude yêu cầu sửa lại');
+}
+
+// Merge chỉ khi tech lead tự chạy lệnh này (AGENTS.md mục 1: merge cần duyệt rõ ràng).
+function merge(task) {
+  if (task.status !== 'APPROVED') throw new Error(`${task.id} chưa APPROVED`);
+  if (sh('git status --porcelain')) throw new Error('Repo chính không sạch, dừng');
+  sh(`git switch ${BASE_BRANCH}`);
+  sh(`git merge --no-ff ${task.branch} -m "merge(${task.id}): ${task.title}"`);
+  const build = spawnSync(BUILD_CMD, { shell: true, cwd: REPO, encoding: 'utf8' });
+  if (build.status !== 0) throw new Error('Build sau merge lỗi, kiểm tra trước khi push');
+  sh(`git worktree remove "${worktreeOf(task)}"`);
+  sh(`git branch -d ${task.branch}`);
+  task.status = 'MERGED';
+  save(task, `Đã merge vào ${BASE_BRANCH} (chưa push)`);
+}
+
+function tick() {
+  for (const t of listTasks()) {
+    try {
+      dispatch(t);
+      verify(t);
+      review(t);
+    } catch (e) {
+      console.error(`[LỖI] ${t.id}: ${e.message}`);
+    }
+  }
+}
+
+function status() {
+  const rows = listTasks();
+  if (!rows.length) return console.log('Bảng việc trống.');
+  for (const t of rows) console.log(`${t.id.padEnd(8)} ${t.status.padEnd(12)} lượt ${t.attempts}/${t.max_attempts}  ${t.branch.padEnd(28)} ${t.title}`);
+}
+
+const [cmd, id, arg] = process.argv.slice(2);
+const one = (fn) => fn(load(id));
+const commands = {
+  status,
+  tick,
+  watch: () => { tick(); setInterval(tick, Number(process.env.WATCH_MS ?? 60000)); },
+  assign: () => one((t) => { t.status = 'ASSIGNED'; save(t, 'Tech lead duyệt đặc tả'); }),
+  dispatch: () => one(dispatch),
+  verify: () => one(verify),
+  verdict: () => one((t) => setVerdict(t, arg?.toUpperCase())),
+  // Mở lại việc BLOCKED vì lý do bên ngoài (không tính thêm lượt); báo cáo cũ được lưu lại để tra cứu.
+  reopen: () => one((t) => {
+    if (t.status !== 'BLOCKED') throw new Error(`${t.id} đang ${t.status}, không phải BLOCKED`);
+    const report = path.join(taskDir(t.id), `report-${t.attempts}.md`);
+    if (fs.existsSync(report)) fs.renameSync(report, report.replace(/\.md$/, `.blocked-${Date.now()}.md`));
+    t.status = 'IN_PROGRESS';
+    save(t, `Mở lại lượt ${t.attempts}, dán lại prompt-${t.attempts}.md cho Antigravity`);
+  }),
+  merge: () => one(merge),
+};
+if (!commands[cmd]) {
+  console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | reopen <id> | merge <id>');
+  process.exit(1);
+}
+commands[cmd]();
