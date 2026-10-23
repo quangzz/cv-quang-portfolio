@@ -38,13 +38,13 @@ export const Navbar: React.FC = () => {
           {/* Logo & Họ tên tối giản */}
           <a
             href="#hero"
-            className="flex items-center gap-2.5 group focus:outline-none"
+            className="flex items-center gap-2.5 min-w-0 group focus:outline-none"
             aria-label="Trang chủ Phạm Phúc Quang"
           >
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-cyan-500 to-amber-500 flex items-center justify-center text-white font-black text-base shadow-sm group-hover:scale-105 transition-transform">
               Q
             </div>
-            <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
+            <span className="hidden sm:inline font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
               Phạm Phúc Quang
             </span>
           </a>
@@ -77,6 +77,7 @@ export const Navbar: React.FC = () => {
                     key={mode.id}
                     type="button"
                     onClick={() => setRoleMode(mode.id)}
+                    aria-label={mode.label}
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       isActive
                         ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
@@ -84,7 +85,7 @@ export const Navbar: React.FC = () => {
                     }`}
                   >
                     {mode.icon}
-                    <span>{mode.label}</span>
+                    <span className="hidden sm:inline">{mode.label}</span>
                   </button>
                 );
               })}
