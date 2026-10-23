@@ -7,6 +7,17 @@ html {
   scroll-behavior: smooth;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+section[id],
+[id^="project-"] {
+  scroll-margin-top: 5rem;
+}
+
 /* Họa tiết lưới nền nhẹ nhàng kiểu Bento hiện đại */
 .bg-grid-pattern {
   background-size: 32px 32px;
