@@ -38,7 +38,7 @@ export const Navbar: React.FC = () => {
           {/* Logo & Họ tên tối giản */}
           <a
             href="#hero"
-            className="flex items-center gap-2.5 min-w-0 group focus:outline-none"
+            className="flex items-center gap-2.5 min-w-0 group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
             aria-label="Trang chủ Phạm Phúc Quang"
           >
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-cyan-500 to-amber-500 flex items-center justify-center text-white font-black text-base shadow-sm group-hover:scale-105 transition-transform">

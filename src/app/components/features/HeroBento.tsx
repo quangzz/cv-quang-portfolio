@@ -211,7 +211,7 @@ export const HeroBento: React.FC = () => {
                 <a
                   key={brand.key}
                   href={brand.targetId}
-                  className="transition-transform hover:scale-105 focus:outline-none"
+                  className="transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
                 >
                   <BrandLogoBadge brandKey={brand.key} size="sm" />
                 </a>
