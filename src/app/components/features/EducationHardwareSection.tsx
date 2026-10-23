@@ -47,9 +47,9 @@ export const EducationHardwareSection: React.FC = () => {
     <section id="education" className="py-14 md:py-20">
       <SectionHeader
         badgeText="Nền Tảng Học Thuật & Hạ Tầng"
-        title="Học Vấn, Chứng Chỉ &"
-        highlightText="Năng Lực Triển Khai Thiết Bị"
-        subtitle="Nền tảng Kỹ sư Công nghệ Thông tin vững chắc từ Đại học Thủy Lợi kết hợp khả năng làm chủ cả phần mềm AI lẫn phần cứng – mạng thực tế."
+        title="Học Vấn &"
+        highlightText="Năng Lực Thiết Bị"
+        subtitle="Kỹ sư CNTT Đại học Thủy Lợi, làm chủ cả phần mềm AI lẫn phần cứng và mạng."
         badgeVariant="amber"
       />
 
