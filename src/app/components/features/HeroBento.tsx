@@ -18,6 +18,7 @@ import { Badge } from '../ui/Badge';
 import { BrandLogoBadge, BrandLogoKey } from '../ui/ProjectBrandLogo';
 import { PERSONAL_INFO } from '../../utils/portfolio-data';
 import { usePortfolio } from '../../context/PortfolioContext';
+import { RoleMode } from '../../types/portfolio';
 
 const featuredBrands: { key: BrandLogoKey; targetId: string }[] = [
   { key: 'ge-vernova', targetId: '#project-ge-vernova-multiscreen' },
@@ -30,16 +31,22 @@ const featuredBrands: { key: BrandLogoKey; targetId: string }[] = [
   { key: 'tlu-university', targetId: '#education' },
 ];
 
-const METRIC_SPAN: Record<number, string> = {
-  1: 'lg:col-span-12',
-  2: 'lg:col-span-6',
-  3: 'lg:col-span-4',
-  4: 'lg:col-span-3',
+const roleOptions: { id: RoleMode; label: string }[] = [
+  { id: 'all', label: 'Tất cả' },
+  { id: 'ai-engineer', label: 'AI Engineer' },
+  { id: 'it-system', label: 'IT Support' },
+];
+
+const METRIC_GRID: Record<number, string> = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: 'grid-cols-2 lg:grid-cols-3',
+  4: 'grid-cols-2 lg:grid-cols-4',
 };
 
 // Tổ hợp Bento mở đầu đã được tối giản, súc tích và thoáng mắt
 export const HeroBento: React.FC = () => {
-  const { roleMode } = usePortfolio();
+  const { roleMode, setRoleMode } = usePortfolio();
   const [copiedField, setCopiedField] = useState<'email' | 'phone' | null>(null);
   const [copyError, setCopyError] = useState<'email' | 'phone' | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,17 +110,49 @@ export const HeroBento: React.FC = () => {
             </h1>
 
             <p className="mt-2 text-base sm:text-lg font-bold bg-gradient-to-r from-indigo-600 via-cyan-600 to-teal-500 dark:from-indigo-400 dark:via-cyan-400 dark:to-teal-300 bg-clip-text text-transparent">
-              {roleMode === 'it-system'
-                ? PERSONAL_INFO.secondaryTitle
-                : `${PERSONAL_INFO.primaryTitle} • IT System Specialist`}
+              {PERSONAL_INFO.primaryTitle}
+            </p>
+            <p className="mt-1 text-sm sm:text-base font-semibold text-slate-500 dark:text-slate-400">
+              {PERSONAL_INFO.secondaryTitle}
             </p>
 
             <p className="mt-4 text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">
               {concisePitch}
             </p>
 
+            {/* Bộ chọn vị trí ứng tuyển */}
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+              <span className="text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300">
+                Xem hồ sơ theo vị trí:
+              </span>
+              <div
+                role="group"
+                aria-label="Chọn vị trí ứng tuyển"
+                className="inline-flex flex-wrap items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700"
+              >
+                {roleOptions.map((option) => {
+                  const isActive = roleMode === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      aria-pressed={isActive}
+                      onClick={() => setRoleMode(option.id)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* 3 Nhãn định vị nhanh */}
-            <div className="mt-5 flex flex-wrap gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-200">
                 🤖 RAG / Face Swap / Digital Human
               </span>
@@ -158,7 +197,7 @@ export const HeroBento: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-                  {PERSONAL_INFO.fullName}
+                  Liên hệ nhanh
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Kỹ sư CNTT • Đại học Thủy Lợi
@@ -194,9 +233,9 @@ export const HeroBento: React.FC = () => {
               </li>
 
               <li className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-                <span className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-semibold truncate pr-2">
+                <span className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-semibold pr-2">
                   <Mail className="w-4 h-4 text-cyan-500 shrink-0" />
-                  <span className="truncate">{PERSONAL_INFO.email}</span>
+                  <span className="break-all">{PERSONAL_INFO.email}</span>
                 </span>
                 <button
                   type="button"
@@ -238,24 +277,30 @@ export const HeroBento: React.FC = () => {
         </BentoCard>
 
         {/* Hàng Thẻ Chỉ Số Thực Chiến gọn gàng */}
-        {metrics.map((metric) => (
-          <BentoCard key={metric.label} className={`${METRIC_SPAN[metrics.length] ?? 'lg:col-span-3'} p-5`}>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {metric.label}
-              </span>
-              <Zap className="w-4 h-4 text-indigo-500" />
-            </div>
-            <div
-              className={`text-2xl sm:text-3xl font-black bg-gradient-to-r ${metric.accentColor} bg-clip-text text-transparent`}
-            >
-              {metric.value}
-            </div>
-            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 line-clamp-2">
-              {metric.description}
-            </p>
-          </BentoCard>
-        ))}
+        <div
+          className={`lg:col-span-12 grid gap-5 ${
+            METRIC_GRID[metrics.length] ?? 'grid-cols-2 lg:grid-cols-4'
+          }`}
+        >
+          {metrics.map((metric) => (
+            <BentoCard key={metric.label} className="p-5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  {metric.label}
+                </span>
+                <Zap className="w-4 h-4 text-indigo-500" />
+              </div>
+              <div
+                className={`text-2xl sm:text-3xl font-black bg-gradient-to-r ${metric.accentColor} bg-clip-text text-transparent`}
+              >
+                {metric.value}
+              </div>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 hidden sm:block">
+                {metric.description}
+              </p>
+            </BentoCard>
+          ))}
+        </div>
 
         {/* Dải Logo Thương Hiệu & Dự Án */}
         <BentoCard className="lg:col-span-12 p-4 sm:p-5 bg-white/90 dark:bg-slate-900/90">
@@ -265,12 +310,12 @@ export const HeroBento: React.FC = () => {
               Dự án &amp; Đơn vị tiêu biểu:
             </span>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap justify-center gap-3">
               {featuredBrands.map((brand) => (
                 <a
                   key={brand.key}
                   href={brand.targetId}
-                  className="transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                  className="h-12 flex items-center transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
                 >
                   <BrandLogoBadge brandKey={brand.key} size="sm" />
                 </a>
