@@ -101,7 +101,9 @@ export const BrandLogoBadge: React.FC<BrandLogoProps> = ({
     brandKey === 'vietnam-80-years' ||
     brandKey === 'tlu-university' ||
     brandKey === 'ensure-gold' ||
-    brandKey === 'ai-for-good';
+    brandKey === 'ai-for-good' ||
+    brandKey === 'urah-network' ||
+    brandKey === 'urah-trian-infra';
 
   return (
     <div
