@@ -1,4 +1,4 @@
-# Project Tech Stack & Architecture Rules — Personal Portfolio (Phạm Phú Quang)
+# Project Tech Stack & Architecture Rules — Personal Portfolio (Phạm Phúc Quang)
 
 ## 1. Tech Stack Cụ Thể
 - **Runtime & Build Tool**: Vite 6.x + Node.js
@@ -62,5 +62,5 @@
   - **Firebase Hosting**: Cấu hình thư mục `dist` và SPA rewrite trong `firebase.json`.
 
 ## 5. Quy Ước Riêng Của Dự Án (Project-Specific Conventions)
-- Toàn bộ nội dung CV của Phạm Phú Quang (cả mảng AI-Driven Software Engineer và IT Helpdesk & System Support) được chuẩn hóa trong `src/app/utils/portfolio-data.ts` để dễ dàng cập nhật.
+- Toàn bộ nội dung CV của Phạm Phúc Quang (cả mảng AI-Driven Software Engineer và IT Helpdesk & System Support) được chuẩn hóa trong `src/app/utils/portfolio-data.ts` để dễ dàng cập nhật.
 - Toàn bộ comment trong code viết bằng tiếng Việt, tên biến/hàm/component viết bằng tiếng Anh chuẩn.

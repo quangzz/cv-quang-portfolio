@@ -1,6 +1,6 @@
-# Portfolio Cá Nhân — Phạm Phú Quang
+# Portfolio Cá Nhân — Phạm Phúc Quang
 
-Trang Landing Page / Portfolio giới thiệu hồ sơ năng lực của **Phạm Phú Quang** (*AI-Driven Software Engineer / Creative Technologist* & *IT Helpdesk & System Support Specialist*).
+Trang Landing Page / Portfolio giới thiệu hồ sơ năng lực của **Phạm Phúc Quang** (*AI-Driven Software Engineer / Creative Technologist* & *IT Helpdesk & System Support Specialist*).
 
 ## 1. Công Nghệ Sử Dụng
 - **React 19 + TypeScript + Vite**

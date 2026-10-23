@@ -10,7 +10,7 @@ import { ExperienceTimeline } from './components/features/ExperienceTimeline';
 import { EducationHardwareSection } from './components/features/EducationHardwareSection';
 import { ContactSection } from './components/features/ContactSection';
 
-// Component chính kết nối các phân khu của trang Portfolio cá nhân Phạm Phú Quang
+// Component chính kết nối các phân khu của trang Portfolio cá nhân Phạm Phúc Quang
 export const App: React.FC = () => {
   return (
     <ErrorBoundary>
