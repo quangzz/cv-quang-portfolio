@@ -11,6 +11,7 @@ import {
   GraduationCap,
   Zap,
   Award,
+  AlertCircle,
 } from 'lucide-react';
 import { BentoCard } from '../ui/BentoCard';
 import { Badge } from '../ui/Badge';
@@ -181,7 +182,10 @@ export const HeroBento: React.FC = () => {
                     {copiedField === 'phone' ? (
                       <Check className="w-3.5 h-3.5 text-emerald-500" />
                     ) : copyError === 'phone' ? (
-                      <span className="text-red-600 dark:text-red-400">Không sao chép được</span>
+                      <>
+                        <AlertCircle className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                        <span className="sr-only">Không sao chép được</span>
+                      </>
                     ) : (
                       <Copy className="w-3.5 h-3.5" />
                     )}
@@ -204,7 +208,10 @@ export const HeroBento: React.FC = () => {
                     {copiedField === 'email' ? (
                       <Check className="w-3.5 h-3.5 text-emerald-500" />
                     ) : copyError === 'email' ? (
-                      <span className="text-red-600 dark:text-red-400">Không sao chép được</span>
+                      <>
+                        <AlertCircle className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                        <span className="sr-only">Không sao chép được</span>
+                      </>
                     ) : (
                       <Copy className="w-3.5 h-3.5" />
                     )}
