@@ -38,13 +38,13 @@ export const Navbar: React.FC = () => {
           {/* Logo & Họ tên tối giản */}
           <a
             href="#hero"
-            className="flex items-center gap-2.5 group focus:outline-none"
+            className="flex items-center gap-2.5 min-w-0 group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
             aria-label="Trang chủ Phạm Phúc Quang"
           >
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-cyan-500 to-amber-500 flex items-center justify-center text-white font-black text-base shadow-sm group-hover:scale-105 transition-transform">
               Q
             </div>
-            <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
+            <span className="hidden sm:inline font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
               Phạm Phúc Quang
             </span>
           </a>
@@ -77,6 +77,8 @@ export const Navbar: React.FC = () => {
                     key={mode.id}
                     type="button"
                     onClick={() => setRoleMode(mode.id)}
+                    aria-label={mode.label}
+                    aria-pressed={isActive}
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       isActive
                         ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
@@ -84,7 +86,7 @@ export const Navbar: React.FC = () => {
                     }`}
                   >
                     {mode.icon}
-                    <span>{mode.label}</span>
+                    <span className="hidden sm:inline">{mode.label}</span>
                   </button>
                 );
               })}
@@ -119,7 +121,9 @@ export const Navbar: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen((prev) => !prev)}
-              aria-label="Mở menu"
+              aria-label={isMobileMenuOpen ? 'Đóng menu' : 'Mở menu'}
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="mobile-nav"
               className="md:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-200"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -130,7 +134,10 @@ export const Navbar: React.FC = () => {
 
       {/* Menu thả xuống trên Mobile */}
       {isMobileMenuOpen && (
-        <div className="md:hidden bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 pt-2 pb-4 space-y-1">
+        <div
+          id="mobile-nav"
+          className="md:hidden bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 pt-2 pb-4 space-y-1"
+        >
           {navLinks.map((item) => (
             <a
               key={item.href}

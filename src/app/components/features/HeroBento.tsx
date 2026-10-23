@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Sparkles,
   Mail,
@@ -33,11 +33,36 @@ const featuredBrands: { key: BrandLogoKey; targetId: string }[] = [
 export const HeroBento: React.FC = () => {
   const { roleMode } = usePortfolio();
   const [copiedField, setCopiedField] = useState<'email' | 'phone' | null>(null);
+  const [copyError, setCopyError] = useState<'email' | 'phone' | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCopy = (value: string, field: 'email' | 'phone') => {
-    navigator.clipboard.writeText(value);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleCopy = async (value: string, field: 'email' | 'phone') => {
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable');
+      }
+      await navigator.clipboard.writeText(value);
+      setCopyError(null);
+      setCopiedField(field);
+    } catch {
+      setCopiedField(null);
+      setCopyError(field);
+    }
+    copyTimeoutRef.current = setTimeout(() => {
+      setCopiedField(null);
+      setCopyError(null);
+    }, 2000);
   };
 
   // Tóm tắt ngắn gọn 2 câu tùy theo góc nhìn để phần đầu trang thoáng và có điểm nhấn
@@ -140,9 +165,18 @@ export const HeroBento: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleCopy(PERSONAL_INFO.phone, 'phone')}
-                  className="px-2 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                  aria-label="Sao chép số điện thoại"
+                  className="px-2 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer"
                 >
-                  {copiedField === 'phone' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span aria-live="polite">
+                    {copiedField === 'phone' ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                    ) : copyError === 'phone' ? (
+                      <span className="text-red-600 dark:text-red-400">Không sao chép được</span>
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </span>
                 </button>
               </li>
 
@@ -154,9 +188,18 @@ export const HeroBento: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleCopy(PERSONAL_INFO.email, 'email')}
+                  aria-label="Sao chép email"
                   className="px-2 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 border border-slate-200 dark:border-slate-700 shrink-0 cursor-pointer"
                 >
-                  {copiedField === 'email' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span aria-live="polite">
+                    {copiedField === 'email' ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                    ) : copyError === 'email' ? (
+                      <span className="text-red-600 dark:text-red-400">Không sao chép được</span>
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                  </span>
                 </button>
               </li>
 
@@ -211,7 +254,7 @@ export const HeroBento: React.FC = () => {
                 <a
                   key={brand.key}
                   href={brand.targetId}
-                  className="transition-transform hover:scale-105 focus:outline-none"
+                  className="transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
                 >
                   <BrandLogoBadge brandKey={brand.key} size="sm" />
                 </a>

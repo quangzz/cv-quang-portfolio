@@ -97,6 +97,11 @@ export const BrandLogoBadge: React.FC<BrandLogoProps> = ({
   className = '',
 }) => {
   const meta = BRAND_META_MAP[brandKey] || BRAND_META_MAP['tlu-university'];
+  const showLabel =
+    brandKey === 'vietnam-80-years' ||
+    brandKey === 'tlu-university' ||
+    brandKey === 'ensure-gold' ||
+    brandKey === 'ai-for-good';
 
   return (
     <div
@@ -107,24 +112,21 @@ export const BrandLogoBadge: React.FC<BrandLogoProps> = ({
         {meta.secondaryLogoSrc && (
           <img
             src={meta.secondaryLogoSrc}
-            alt="Abbott"
+            alt={showLabel ? '' : 'Abbott'}
             loading="lazy"
             className="h-4 sm:h-4.5 w-auto object-contain"
           />
         )}
         <img
           src={meta.logoSrc}
-          alt={meta.name}
+          alt={showLabel ? '' : meta.name}
           loading="lazy"
           className={meta.imgClassName}
         />
       </div>
 
       {/* Nhãn phụ cho các logo chỉ có biểu tượng hoặc cần làm rõ tên chiến dịch */}
-      {(brandKey === 'vietnam-80-years' ||
-        brandKey === 'tlu-university' ||
-        brandKey === 'ensure-gold' ||
-        brandKey === 'ai-for-good') && (
+      {showLabel && (
         <div className="flex flex-col leading-tight border-l border-slate-200 pl-2.5">
           <span className="font-extrabold text-[11px] sm:text-xs text-slate-900 tracking-tight">
             {meta.name}
