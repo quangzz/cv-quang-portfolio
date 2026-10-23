@@ -66,7 +66,7 @@ export const SkillsGrid: React.FC = () => {
                 : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800'
             }`}
           >
-            Tất cả (6 Nhóm)
+            Tất cả ({SKILL_GROUPS.length} Nhóm)
           </button>
           <button
             type="button"
