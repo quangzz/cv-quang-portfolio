@@ -104,8 +104,10 @@ export const SkillsGrid: React.FC = () => {
               key={group.id}
               className={`p-6 sm:p-7 flex flex-col justify-between transition-all ${
                 isHighlighted
-                  ? 'opacity-100 ring-1 ring-transparent'
-                  : 'opacity-50 hover:opacity-100'
+                  ? roleMode !== 'all'
+                    ? 'opacity-100 ring-2 ring-indigo-500/40'
+                    : 'opacity-100 ring-1 ring-transparent'
+                  : 'opacity-80 hover:opacity-100'
               }`}
             >
               <div>
