@@ -78,6 +78,7 @@ export const Navbar: React.FC = () => {
                     type="button"
                     onClick={() => setRoleMode(mode.id)}
                     aria-label={mode.label}
+                    aria-pressed={isActive}
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       isActive
                         ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
@@ -120,7 +121,9 @@ export const Navbar: React.FC = () => {
             <button
               type="button"
               onClick={() => setIsMobileMenuOpen((prev) => !prev)}
-              aria-label="Mở menu"
+              aria-label={isMobileMenuOpen ? 'Đóng menu' : 'Mở menu'}
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="mobile-nav"
               className="md:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-slate-200"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -131,7 +134,10 @@ export const Navbar: React.FC = () => {
 
       {/* Menu thả xuống trên Mobile */}
       {isMobileMenuOpen && (
-        <div className="md:hidden bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 pt-2 pb-4 space-y-1">
+        <div
+          id="mobile-nav"
+          className="md:hidden bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 pt-2 pb-4 space-y-1"
+        >
           {navLinks.map((item) => (
             <a
               key={item.href}
