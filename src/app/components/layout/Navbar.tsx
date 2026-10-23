@@ -1,16 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Sparkles,
   Sun,
   Moon,
   Menu,
   X,
-  Layers,
-  Headset,
   Printer,
 } from 'lucide-react';
 import { usePortfolio } from '../../context/PortfolioContext';
-import { RoleMode } from '../../types/portfolio';
 
 const navLinks = [
   { label: 'Giới thiệu', href: '#hero' },
@@ -20,16 +16,36 @@ const navLinks = [
   { label: 'Liên hệ', href: '#contact' },
 ];
 
-const roleModes: { id: RoleMode; label: string; icon: React.ReactNode }[] = [
-  { id: 'all', label: 'Tất cả', icon: <Layers className="w-3.5 h-3.5" /> },
-  { id: 'ai-engineer', label: 'AI', icon: <Sparkles className="w-3.5 h-3.5" /> },
-  { id: 'it-system', label: 'IT', icon: <Headset className="w-3.5 h-3.5" /> },
-];
-
 // Thanh điều hướng tối giản, hiện đại theo phong cách Floating Glassmorphism
 export const Navbar: React.FC = () => {
-  const { theme, toggleTheme, roleMode, setRoleMode } = usePortfolio();
+  const { theme, toggleTheme } = usePortfolio();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeId, setActiveId] = useState<string>('hero');
+
+  useEffect(() => {
+    const sectionIds = navLinks.map((item) => item.href.replace(/^#/, ''));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveId(entry.target.id);
+          }
+        });
+      },
+      { rootMargin: '-45% 0px -50% 0px' }
+    );
+
+    sectionIds.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        observer.observe(el);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   return (
     <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-white/80 dark:bg-slate-950/80 border-b border-slate-200/60 dark:border-slate-800/70 transition-colors">
@@ -41,57 +57,38 @@ export const Navbar: React.FC = () => {
             className="flex items-center gap-2.5 min-w-0 group focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
             aria-label="Trang chủ Phạm Phúc Quang"
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-cyan-500 to-amber-500 flex items-center justify-center text-white font-black text-base shadow-sm group-hover:scale-105 transition-transform">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-cyan-500 to-amber-500 flex items-center justify-center text-white font-black text-base shadow-sm group-hover:scale-105 transition-transform shrink-0">
               Q
             </div>
-            <span className="hidden sm:inline font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
+            <span className="truncate font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
               Phạm Phúc Quang
             </span>
           </a>
 
           {/* Menu điều hướng chính gọn gàng */}
           <nav className="hidden md:flex items-center gap-1" aria-label="Điều hướng chính">
-            {navLinks.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="px-3.5 py-1.5 rounded-xl text-sm font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400 hover:bg-slate-100/80 dark:hover:bg-slate-900 transition-colors"
-              >
-                {item.label}
-              </a>
-            ))}
+            {navLinks.map((item) => {
+              const sectionId = item.href.replace(/^#/, '');
+              const isActive = activeId === sectionId;
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  aria-current={isActive ? 'location' : undefined}
+                  className={`px-3.5 py-1.5 rounded-xl text-sm font-semibold hover:bg-slate-100/80 dark:hover:bg-slate-900 transition-colors ${
+                    isActive
+                      ? 'text-indigo-600 dark:text-indigo-400'
+                      : 'text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-400'
+                  }`}
+                >
+                  {item.label}
+                </a>
+              );
+            })}
           </nav>
 
           {/* Cụm công cụ tinh gọn bên phải */}
           <div className="flex items-center gap-2">
-            {/* Chuyển nhanh chế độ: Tất cả | AI | IT */}
-            <div
-              className="flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800"
-              role="group"
-              aria-label="Chế độ hồ sơ"
-            >
-              {roleModes.map((mode) => {
-                const isActive = roleMode === mode.id;
-                return (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => setRoleMode(mode.id)}
-                    aria-label={mode.label}
-                    aria-pressed={isActive}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    {mode.icon}
-                    <span className="hidden sm:inline">{mode.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
             {/* Nút In PDF dạng Icon gọn gàng */}
             <button
               type="button"
@@ -138,16 +135,25 @@ export const Navbar: React.FC = () => {
           id="mobile-nav"
           className="md:hidden bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-4 pt-2 pb-4 space-y-1"
         >
-          {navLinks.map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="block px-3 py-2 rounded-xl text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-slate-900 hover:text-indigo-600"
-            >
-              {item.label}
-            </a>
-          ))}
+          {navLinks.map((item) => {
+            const sectionId = item.href.replace(/^#/, '');
+            const isActive = activeId === sectionId;
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                aria-current={isActive ? 'location' : undefined}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`block px-3 py-2 rounded-xl text-sm font-semibold hover:bg-indigo-50 dark:hover:bg-slate-900 hover:text-indigo-600 ${
+                  isActive
+                    ? 'text-indigo-600 dark:text-indigo-400'
+                    : 'text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                {item.label}
+              </a>
+            );
+          })}
         </div>
       )}
     </header>
