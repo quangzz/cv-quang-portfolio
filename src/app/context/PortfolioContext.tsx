@@ -11,12 +11,28 @@ interface PortfolioContextValue {
 
 const PortfolioContext = createContext<PortfolioContextValue | undefined>(undefined);
 
+function safeGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    console.warn('Không thể lưu vào localStorage:', err);
+  }
+}
+
 // Provider quản lý giao diện Sáng/Tối và chế độ hiển thị hồ sơ tuân thủ chuẩn an ninh URAH Network
 export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isMounted, setIsMounted] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('quang_portfolio_theme');
+      const savedTheme = safeGet('quang_portfolio_theme');
       if (savedTheme === 'dark' || savedTheme === 'light') {
         return savedTheme;
       }
@@ -31,8 +47,12 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsMounted(true);
     const sensitiveKeys = ['token', 'accessToken', 'jwt', 'auth'];
     sensitiveKeys.forEach((key) => {
-      if (localStorage.getItem(key)) {
-        localStorage.removeItem(key);
+      if (safeGet(key)) {
+        try {
+          localStorage.removeItem(key);
+        } catch (err) {
+          console.warn('Không thể xóa khóa nhạy cảm khỏi localStorage:', err);
+        }
       }
     });
   }, []);
@@ -45,7 +65,7 @@ export const PortfolioProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } else {
       rootElement.classList.remove('dark');
     }
-    localStorage.setItem('quang_portfolio_theme', theme);
+    safeSet('quang_portfolio_theme', theme);
   }, [theme]);
 
   // Chuyển sang giao diện sáng khi in PDF và khôi phục lại sau khi in
