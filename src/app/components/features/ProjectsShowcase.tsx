@@ -175,7 +175,11 @@ export const ProjectsShowcase: React.FC = () => {
                     <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white leading-snug">
                       {project.title}
                     </h3>
-                    <p className="mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-2 sm:line-clamp-none">
+                    <p
+                      className={`mt-1.5 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed ${
+                        isExpanded ? '' : 'line-clamp-2 sm:line-clamp-none print:line-clamp-none'
+                      }`}
+                    >
                       {project.summary}
                     </p>
 
