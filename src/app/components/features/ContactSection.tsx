@@ -90,9 +90,9 @@ export const ContactSection: React.FC = () => {
     <section id="contact" className="py-14 md:py-20">
       <SectionHeader
         badgeText="Kết Nối Ngay"
-        title="Liên Hệ Hợp Tác &"
-        highlightText="Trao Đổi Cơ Hội Nghề Nghiệp"
-        subtitle="Tôi luôn sẵn sàng trao đổi về các cơ hội AI-Driven Software Engineer, Creative Technologist hoặc IT Helpdesk & System Support Specialist tại Hà Nội."
+        title="Liên Hệ"
+        highlightText="Hợp Tác"
+        subtitle="Sẵn sàng trao đổi cơ hội AI Engineer, Creative Technologist hoặc IT Support tại Hà Nội."
         badgeVariant="rose"
       />
 
@@ -158,7 +158,7 @@ export const ContactSection: React.FC = () => {
                     <div className="text-xs text-indigo-200">Email cá nhân</div>
                     <a
                       href={`mailto:${PERSONAL_INFO.email}`}
-                      className="text-sm sm:text-base font-extrabold hover:underline truncate block"
+                      className="text-sm sm:text-base font-extrabold hover:underline break-all"
                     >
                       {PERSONAL_INFO.email}
                     </a>
@@ -324,13 +324,18 @@ export const ContactSection: React.FC = () => {
               />
             </div>
 
-            <button
-              type="submit"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
-            >
-              <Send className="w-4 h-4" />
-              <span>Gửi Email Cho {PERSONAL_INFO.fullName}</span>
-            </button>
+            <div>
+              <button
+                type="submit"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-700 hover:to-cyan-700 text-white font-bold text-sm shadow-lg shadow-indigo-500/25 transition-all cursor-pointer"
+              >
+                <Send className="w-4 h-4" />
+                <span>Soạn Email</span>
+              </button>
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Nút này mở ứng dụng email trên máy bạn với nội dung đã điền sẵn.
+              </p>
+            </div>
           </form>
         </BentoCard>
       </div>

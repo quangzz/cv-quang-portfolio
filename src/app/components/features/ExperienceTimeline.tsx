@@ -15,9 +15,9 @@ export const ExperienceTimeline: React.FC = () => {
     <section id="experience" className="py-14 md:py-20">
       <SectionHeader
         badgeText="Hành Trình Sự Nghiệp"
-        title="Kinh Nghiệm Làm Việc &"
-        highlightText="Vận Hành Hệ Thống Thực Tế"
-        subtitle="Quá trình phát triển từ Thực tập sinh Machine Learning / Phần cứng đến AI-Driven Software Engineer & Chuyên viên Quản trị Hệ thống CNTT."
+        title="Kinh Nghiệm"
+        highlightText="Làm Việc"
+        subtitle="Từ thực tập sinh Machine Learning đến AI Engineer và quản trị hệ thống CNTT."
         badgeVariant="emerald"
       />
 
