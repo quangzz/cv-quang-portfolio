@@ -133,6 +133,22 @@ ${rework ? `\n## Phản hồi review lượt trước (phải xử lý hết)\n$
   return file;
 }
 
+export function hasJsonError(stdout) {
+  if (typeof stdout !== 'string' || !stdout.trim()) return false;
+  for (const line of stdout.trim().split(/\r?\n/)) {
+    try {
+      const parsed = JSON.parse(line.trim());
+      if (parsed && typeof parsed === 'object' && Boolean(parsed.error)) return true;
+    } catch {}
+  }
+  try {
+    const parsed = JSON.parse(stdout.trim());
+    return Boolean(parsed && typeof parsed === 'object' && parsed.error);
+  } catch {
+    return false;
+  }
+}
+
 // Gửi việc sang Antigravity. Ưu tiên: lệnh tự cấu hình → agy CLI → agentapi (chạy trong terminal Antigravity) → thủ công.
 function sendToAntigravity(task, promptFile) {
   const short = `Đọc và làm đúng toàn bộ yêu cầu trong file ${promptFile}`;
@@ -148,24 +164,35 @@ function sendToAntigravity(task, promptFile) {
   }
   console.log(`[GỬI] ${cmd}`);
   const out = spawnSync(cmd, { shell: true, cwd: worktreeOf(task), encoding: 'utf8' });
-  fs.appendFileSync(path.join(taskDir(task.id), 'executor.log'), `\n### ${now()} ${cmd}\n${out.stdout}${out.stderr}`);
-  if (out.status !== 0 || /"error"/.test(out.stdout)) throw new Error(`Gửi việc thất bại: ${(out.stdout + out.stderr).slice(0, 300)}`);
+  fs.appendFileSync(path.join(taskDir(task.id), 'executor.log'), `\n### ${now()} ${cmd}\n${out.stdout ?? ''}${out.stderr ?? ''}`);
+  if (out.status !== 0 || out.error || hasJsonError(out.stdout ?? '')) {
+    throw new Error(`Gửi việc thất bại: ${((out.stdout ?? '') + (out.stderr ?? '')).slice(0, 300)}`);
+  }
   return 'sent';
 }
 
-function dispatch(task) {
+export function dispatch(task) {
   if (!['ASSIGNED', 'REWORK'].includes(task.status)) return;
   if (task.attempts >= task.max_attempts) {
     task.status = 'BLOCKED';
     task.blocked_reason = 'max_attempts';
     return save(task, `Quá ${task.max_attempts} lượt, cần tech lead xử lý`);
   }
-  task.attempts += 1;
   const wt = ensureWorktree(task);
+  task.attempts += 1;
+  delete task.blocked_reason;
   const promptFile = writeAgentPrompt(task, wt);
-  const mode = sendToAntigravity(task, promptFile);
   task.status = 'IN_PROGRESS';
-  save(task, `Giao Antigravity lượt ${task.attempts} (${mode})`);
+  save(task, 'đang gửi');
+  try {
+    const mode = sendToAntigravity(task, promptFile);
+    save(task, `Giao Antigravity lượt ${task.attempts} (${mode})`);
+  } catch (e) {
+    task.status = 'BLOCKED';
+    task.blocked_reason = 'dispatch_failed';
+    save(task, `Gửi việc thất bại lượt ${task.attempts}: ${e.message}`);
+    throw e;
+  }
 }
 
 // Không tin báo cáo của agent: tự build lại trong worktree và gom bằng chứng cho reviewer.
