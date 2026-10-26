@@ -14,6 +14,7 @@ export const getBoard = () => (process.env.BOARD ? path.resolve(process.env.BOAR
 const BASE_BRANCH = 'stage';
 const BUILD_CMD = 'npm run build';
 export const LOCK_STALE_MS = 30 * 60 * 1000;
+const warnedMissingSpec = new Set();
 
 export const git = (args, cwd = getRepo()) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -152,13 +153,17 @@ export function save(task, note) {
   fs.renameSync(tmp, target);
 }
 
-function listTasks() {
+export function listTasks(opts = {}) {
   const board = getBoard();
   if (!fs.existsSync(board)) return [];
-  return fs.readdirSync(board).filter((d) => fs.existsSync(path.join(board, d, 'task.json'))).sort().map((d) => load(d));
+  return fs
+    .readdirSync(board)
+    .filter((d) => fs.existsSync(path.join(board, d, 'task.json')))
+    .sort()
+    .map((d) => load(d, opts));
 }
 
-const worktreeOf = (task) => `${getRepo()}_worktree_${task.id.toLowerCase()}`;
+export const worktreeOf = (task) => `${getRepo()}_worktree_${task.id.toLowerCase()}`;
 
 function ensureWorktree(task) {
   const repo = getRepo();
@@ -236,6 +241,14 @@ function sendToAntigravity(task, promptFile) {
 
 export function dispatch(task) {
   if (!['ASSIGNED', 'REWORK'].includes(task.status)) return;
+  const specFile = path.join(taskDir(task.id), 'spec.md');
+  if (!fs.existsSync(specFile)) {
+    if (!warnedMissingSpec.has(task.id)) {
+      warnedMissingSpec.add(task.id);
+      console.warn(`[CẢNH BÁO] Bỏ qua ${task.id}: thiếu file ${specFile}`);
+    }
+    return;
+  }
   if (task.attempts >= task.max_attempts) {
     task.status = 'BLOCKED';
     task.blocked_reason = 'max_attempts';
@@ -514,29 +527,42 @@ export function tick() {
   });
 }
 
-export function status() {
-  const rows = listTasks();
+export function status(rows = listTasks({ allowMissingBranch: true })) {
   if (!rows.length) return console.log('Bảng việc trống.');
-  for (const t of rows) console.log(`${t.id.padEnd(8)} ${t.status.padEnd(12)} lượt ${t.attempts}/${t.max_attempts}  ${t.branch.padEnd(28)} ${t.title}`);
+  for (const t of rows) {
+    console.log(
+      `${String(t.id ?? '').padEnd(8)} ${String(t.status ?? '').padEnd(12)} lượt ${t.attempts ?? 0}/${t.max_attempts ?? 0}  ${String(t.branch ?? '-').padEnd(28)} ${t.title ?? ''}`
+    );
+  }
 }
 
-const [cmd, id, arg] = process.argv.slice(2);
-const one = (fn) => withLock(() => fn(load(id)));
-const commands = {
-  status,
-  tick,
-  watch: () => { tick(); setInterval(tick, Number(process.env.WATCH_MS ?? 60000)); },
-  assign: () => one(assign),
-  dispatch: () => one(dispatch),
-  verify: () => one(verify),
-  verdict: () => one((t) => setVerdict(t, arg)),
-  'retry-review': () => one(retryReview),
-  reopen: () => one(reopen),
-  extend: () => one((t) => extend(t, arg)),
-  merge: () => one(merge),
-};
-if (!commands[cmd]) {
-  console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | retry-review <id> | reopen <id> | extend <id> | merge <id>');
-  process.exit(1);
+export function runCli(argv = process.argv.slice(2)) {
+  const [cmd, id, arg] = argv;
+  const one = (fn) => withLock(() => fn(load(id)));
+  const commands = {
+    status: () => status(),
+    tick,
+    watch: () => {
+      tick();
+      setInterval(tick, Number(process.env.WATCH_MS ?? 60000));
+    },
+    assign: () => one(assign),
+    dispatch: () => one(dispatch),
+    verify: () => one(verify),
+    verdict: () => one((t) => setVerdict(t, arg)),
+    'retry-review': () => one(retryReview),
+    reopen: () => one(reopen),
+    extend: () => one((t) => extend(t, arg)),
+    merge: () => one(merge),
+  };
+  if (!commands[cmd]) {
+    console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | retry-review <id> | reopen <id> | extend <id> | merge <id>');
+    process.exit(1);
+  }
+  return commands[cmd]();
 }
-commands[cmd]();
+
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  runCli();
+}
