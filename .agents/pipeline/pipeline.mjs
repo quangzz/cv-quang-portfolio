@@ -168,33 +168,80 @@ function dispatch(task) {
 }
 
 // Không tin báo cáo của agent: tự build lại trong worktree và gom bằng chứng cho reviewer.
-function verify(task) {
+export function verify(task) {
   const dir = taskDir(task.id);
   const report = path.join(dir, `report-${task.attempts}.md`);
   if (task.status !== 'IN_PROGRESS' || !fs.existsSync(report)) return;
-  const agentStatus = fs.readFileSync(report, 'utf8').trim().split('\n').pop().trim();
+  const lines = fs
+    .readFileSync(report, 'utf8')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const agentStatus = lines[lines.length - 1] ?? '';
   if (/^STATUS:\s*BLOCKED/.test(agentStatus)) {
     task.status = 'BLOCKED';
     return save(task, `Agent dừng: ${agentStatus.replace(/^STATUS:\s*BLOCKED\s*-?\s*/, '')}`);
   }
+  if (!/^STATUS:\s*DONE$/.test(agentStatus)) return;
   const wt = worktreeOf(task);
   if (!fs.existsSync(wt)) {
     task.status = 'BLOCKED';
     return save(task, `Có báo cáo nhưng không thấy worktree ${wt}`);
   }
-  if (!fs.existsSync(path.join(wt, 'node_modules'))) {
-    spawnSync('npm ci --no-audit --no-fund', { shell: true, cwd: wt, encoding: 'utf8' });
+  const repoNm = path.join(getRepo(), 'node_modules');
+  const wtNm = path.join(wt, 'node_modules');
+  if (!fs.existsSync(wtNm)) {
+    if (fs.existsSync(repoNm)) {
+      try {
+        fs.symlinkSync(repoNm, wtNm, 'junction');
+      } catch {
+        spawnSync('cmd', ['/c', 'mklink', '/J', wtNm, repoNm], { encoding: 'utf8' });
+      }
+    } else {
+      spawnSync('npm ci --no-audit --no-fund', { shell: true, cwd: wt, encoding: 'utf8' });
+    }
   }
-  const build = spawnSync(BUILD_CMD, { shell: true, cwd: wt, encoding: 'utf8' });
+  const buildCm = process.env.BUILD_CMD ?? BUILD_CMD;
+  const build = spawnSync(buildCm, { shell: true, cwd: wt, encoding: 'utf8' });
+  const statusShort = git(['status', '--short'], wt);
+  const outside = outOfScope(task, wt);
+  const fullDiff = git(['diff', `${BASE_BRANCH}...HEAD`], wt);
+  const MAX_DIFF = 60000;
+  const diffOut =
+    fullDiff.length > MAX_DIFF
+      ? `${fullDiff.slice(0, MAX_DIFF)}\n(diff đã cắt, xem toàn văn bằng git diff)`
+      : fullDiff;
+  task.verified_commit = git(['rev-parse', 'HEAD'], wt);
   const evidence = [
     `# Bằng chứng tự kiểm ${task.id} lượt ${task.attempts} (${now()})`,
     `## git log ${BASE_BRANCH}..HEAD\n\`\`\`\n${git(['log', `${BASE_BRANCH}..HEAD`, '--oneline'], wt)}\n\`\`\``,
-    `## git status (phải sạch)\n\`\`\`\n${git(['status', '--short'], wt) || '(sạch)'}\n\`\`\``,
-    `## Ngoài phạm vi\n${outOfScope(task, wt).map((f) => `- ${f}`).join('\n') || '(không có)'}`,
-    `## ${BUILD_CMD} → exit ${build.status}\n\`\`\`\n${(build.stdout + build.stderr).slice(-3000)}\n\`\`\``,
-    `## Diff\n\`\`\`diff\n${git(['diff', `${BASE_BRANCH}...HEAD`], wt).slice(0, 60000)}\n\`\`\``,
+    `## git status (phải sạch)\n\`\`\`\n${statusShort || '(sạch)'}\n\`\`\``,
+    `## Ngoài phạm vi\n${outside.map((f) => `- ${f}`).join('\n') || '(không có)'}`,
+    `## ${buildCm} → exit ${build.status}\n\`\`\`\n${((build.stdout ?? '') + (build.stderr ?? '')).slice(-3000)}\n\`\`\``,
+    `## Diff\n\`\`\`diff\n${diffOut}\n\`\`\``,
   ].join('\n\n');
   fs.writeFileSync(path.join(dir, `verify-${task.attempts}.md`), evidence);
+  const reasons = [];
+  if (build.status !== 0) {
+    reasons.push(
+      `- Lệnh build thất bại (exit ${build.status}):\n\`\`\`\n${((build.stdout ?? '') + (build.stderr ?? '')).slice(-1500)}\n\`\`\``
+    );
+  }
+  if (outside.length > 0) {
+    reasons.push(`- Sửa file ngoài phạm vi cho phép (${task.files.join(', ')}):\n${outside.map((f) => `  - \`${f}\``).join('\n')}`);
+  }
+  if (statusShort) {
+    reasons.push(`- Worktree không sạch (\`git status --short\`):\n\`\`\`\n${statusShort}\n\`\`\``);
+  }
+  if (reasons.length > 0) {
+    const autoReview = `# Tự kiểm (verify) không đạt — ${task.id} lượt ${task.attempts}\n\n${reasons.join('\n\n')}\n\nVERDICT: REWORK\n`;
+    fs.writeFileSync(path.join(dir, 'review.md'), autoReview, 'utf8');
+    task.status = 'REWORK';
+    return save(
+      task,
+      `Tự kiểm không đạt (build=${build.status}, outOfScope=${outside.length}, dirty=${Boolean(statusShort)}), chuyển thẳng REWORK`
+    );
+  }
   task.status = 'REVIEW';
   save(task, `Build exit ${build.status}, chờ Claude review`);
 }
