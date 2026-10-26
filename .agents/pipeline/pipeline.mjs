@@ -3,7 +3,7 @@
 // Luồng: PLANNED → ASSIGNED → IN_PROGRESS → VERIFY → REVIEW → APPROVED → MERGED
 //                       ↑                                  └→ REWORK ─┘ (quá max_attempts → BLOCKED)
 // Chạy: node .agents/pipeline/pipeline.mjs <lệnh> [id]
-import { execFileSync, execSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +14,8 @@ export const getBoard = () => (process.env.BOARD ? path.resolve(process.env.BOAR
 const BASE_BRANCH = 'stage';
 const BUILD_CMD = 'npm run build';
 
-const sh = (cmd, cwd = getRepo()) => execSync(cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+export const git = (args, cwd = getRepo()) =>
+  execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const taskDir = (id) => path.join(getBoard(), id);
 const now = () => new Date().toISOString();
 
@@ -40,17 +41,46 @@ export function removeWorktree(wt, repo = getRepo()) {
       throw new Error(`Từ chối xoá worktree ${wt}: node_modules là thư mục thật, không tự xoá`);
     }
   }
-  execFileSync('git', ['worktree', 'remove', wt], {
-    cwd: repo,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  git(['worktree', 'remove', wt], repo);
 }
 
-function load(id) {
+export function validateTask(task, dirName, { allowMissingBranch = false } = {}) {
+  if (!task || typeof task !== 'object') throw new Error('Task không hợp lệ');
+  if (typeof task.id !== 'string' || !/^[A-Z]+-[A-Z0-9]+$/.test(task.id)) {
+    throw new Error(`Task id không hợp lệ: "${task.id}"`);
+  }
+  if (dirName !== undefined && task.id !== dirName) {
+    throw new Error(`Task id "${task.id}" không trùng tên thư mục "${dirName}"`);
+  }
+  if (!(allowMissingBranch && (task.branch === undefined || task.branch === null || task.branch === ''))) {
+    if (typeof task.branch !== 'string' || !/^(feat|fix|hotfix|chore)\/[a-z0-9.-]+$/.test(task.branch)) {
+      throw new Error(`Nhánh không hợp lệ: "${task.branch}"`);
+    }
+  }
+  if (
+    !Array.isArray(task.files) ||
+    !task.files.every(
+      (f) =>
+        typeof f === 'string' &&
+        f.length > 0 &&
+        !f.includes('..') &&
+        !/^[\\/]/.test(f) &&
+        !/^[a-zA-Z]:/.test(f)
+    )
+  ) {
+    throw new Error(`Danh sách files không hợp lệ ở task ${task.id}`);
+  }
+  return task;
+}
+
+export function load(id, opts = {}) {
+  if (typeof id !== 'string' || !/^[A-Z]+-[A-Z0-9]+$/.test(id)) {
+    throw new Error(`Task id không hợp lệ: "${id}"`);
+  }
   const file = path.join(taskDir(id), 'task.json');
   if (!fs.existsSync(file)) throw new Error(`Không có task ${id}`);
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  const task = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return validateTask(task, id, opts);
 }
 
 function save(task, note) {
@@ -62,7 +92,7 @@ function save(task, note) {
 function listTasks() {
   const board = getBoard();
   if (!fs.existsSync(board)) return [];
-  return fs.readdirSync(board).filter((d) => fs.existsSync(path.join(board, d, 'task.json'))).sort().map(load);
+  return fs.readdirSync(board).filter((d) => fs.existsSync(path.join(board, d, 'task.json'))).sort().map((d) => load(d));
 }
 
 const worktreeOf = (task) => `${getRepo()}_worktree_${task.id.toLowerCase()}`;
@@ -72,7 +102,7 @@ function ensureWorktree(task) {
   const wt = worktreeOf(task);
   if (!fs.existsSync(wt)) {
     const branchExists = spawnSync('git', ['rev-parse', '--verify', '--quiet', task.branch], { cwd: repo }).status === 0;
-    sh(branchExists ? `git worktree add "${wt}" ${task.branch}` : `git worktree add -b ${task.branch} "${wt}" ${BASE_BRANCH}`);
+    git(branchExists ? ['worktree', 'add', wt, task.branch] : ['worktree', 'add', '-b', task.branch, wt, BASE_BRANCH], repo);
   }
   return wt;
 }
@@ -152,15 +182,17 @@ function verify(task) {
     task.status = 'BLOCKED';
     return save(task, `Có báo cáo nhưng không thấy worktree ${wt}`);
   }
-  if (!fs.existsSync(path.join(wt, 'node_modules'))) sh('npm ci --no-audit --no-fund', wt);
+  if (!fs.existsSync(path.join(wt, 'node_modules'))) {
+    spawnSync('npm ci --no-audit --no-fund', { shell: true, cwd: wt, encoding: 'utf8' });
+  }
   const build = spawnSync(BUILD_CMD, { shell: true, cwd: wt, encoding: 'utf8' });
   const evidence = [
     `# Bằng chứng tự kiểm ${task.id} lượt ${task.attempts} (${now()})`,
-    `## git log ${BASE_BRANCH}..HEAD\n\`\`\`\n${sh(`git log ${BASE_BRANCH}..HEAD --oneline`, wt)}\n\`\`\``,
-    `## git status (phải sạch)\n\`\`\`\n${sh('git status --short', wt) || '(sạch)'}\n\`\`\``,
+    `## git log ${BASE_BRANCH}..HEAD\n\`\`\`\n${git(['log', `${BASE_BRANCH}..HEAD`, '--oneline'], wt)}\n\`\`\``,
+    `## git status (phải sạch)\n\`\`\`\n${git(['status', '--short'], wt) || '(sạch)'}\n\`\`\``,
     `## Ngoài phạm vi\n${outOfScope(task, wt).map((f) => `- ${f}`).join('\n') || '(không có)'}`,
     `## ${BUILD_CMD} → exit ${build.status}\n\`\`\`\n${(build.stdout + build.stderr).slice(-3000)}\n\`\`\``,
-    `## Diff\n\`\`\`diff\n${sh(`git diff ${BASE_BRANCH}...HEAD`, wt).slice(0, 60000)}\n\`\`\``,
+    `## Diff\n\`\`\`diff\n${git(['diff', `${BASE_BRANCH}...HEAD`], wt).slice(0, 60000)}\n\`\`\``,
   ].join('\n\n');
   fs.writeFileSync(path.join(dir, `verify-${task.attempts}.md`), evidence);
   task.status = 'REVIEW';
@@ -168,7 +200,7 @@ function verify(task) {
 }
 
 function outOfScope(task, wt) {
-  const changed = sh(`git diff --name-only ${BASE_BRANCH}...HEAD`, wt).split('\n').filter(Boolean);
+  const changed = git(['diff', '--name-only', `${BASE_BRANCH}...HEAD`], wt).split('\n').filter(Boolean);
   return changed.filter((f) => !task.files.some((allowed) => f === allowed || f.startsWith(allowed.replace(/\/?$/, '/'))));
 }
 
@@ -195,13 +227,13 @@ function setVerdict(task, verdict) {
 // Merge chỉ khi tech lead tự chạy lệnh này (AGENTS.md mục 1: merge cần duyệt rõ ràng).
 function merge(task) {
   if (task.status !== 'APPROVED') throw new Error(`${task.id} chưa APPROVED`);
-  if (sh('git status --porcelain')) throw new Error('Repo chính không sạch, dừng');
-  sh(`git switch ${BASE_BRANCH}`);
-  sh(`git merge --no-ff ${task.branch} -m "merge(${task.id}): ${task.title}"`);
+  if (git(['status', '--porcelain'])) throw new Error('Repo chính không sạch, dừng');
+  git(['switch', BASE_BRANCH]);
+  git(['merge', '--no-ff', task.branch, '-m', `merge(${task.id}): ${task.title}`]);
   const build = spawnSync(BUILD_CMD, { shell: true, cwd: getRepo(), encoding: 'utf8' });
   if (build.status !== 0) throw new Error('Build sau merge lỗi, kiểm tra trước khi push');
   removeWorktree(worktreeOf(task));
-  sh(`git branch -d ${task.branch}`);
+  git(['branch', '-d', task.branch]);
   task.status = 'MERGED';
   save(task, `Đã merge vào ${BASE_BRANCH} (chưa push)`);
 }
@@ -240,7 +272,7 @@ const commands = {
     const report = path.join(taskDir(t.id), `report-${t.attempts}.md`);
     if (fs.existsSync(report)) fs.renameSync(report, report.replace(/\.md$/, `.blocked-${Date.now()}.md`));
     t.status = 'IN_PROGRESS';
-    save(t, `Mở lại lượt ${t.attempts}, dán lại prompt-${t.attempts}.md cho Antigravity`);
+    save(task, `Mở lại lượt ${t.attempts}, dán lại prompt-${t.attempts}.md cho Antigravity`);
   }),
   merge: () => one(merge),
 };
