@@ -204,22 +204,65 @@ function outOfScope(task, wt) {
   return changed.filter((f) => !task.files.some((allowed) => f === allowed || f.startsWith(allowed.replace(/\/?$/, '/'))));
 }
 
+export function parseVerdict(stdout) {
+  if (typeof stdout !== 'string') return null;
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.length) return null;
+  const last = lines[lines.length - 1];
+  const m = /^VERDICT: (APPROVED|REWORK)$/.exec(last);
+  return m ? m[1] : null;
+}
+
 // Claude review: tự động nếu có `claude` CLI, nếu không thì để phiên Claude Code đọc verify-*.md và gọi `verdict`.
-function review(task) {
-  if (task.status !== 'REVIEW') return;
-  const has = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['claude']).status === 0;
-  if (!has) return console.log(`[REVIEW] ${task.id}: chờ Claude review (${path.join(taskDir(task.id), `verify-${task.attempts}.md`)})`);
+export function review(task) {
+  if (task.status !== 'REVIEW' || task.review_failed_at) return;
+  const whereOut = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['claude'], { encoding: 'utf8' });
+  if (whereOut.status !== 0) {
+    return console.log(`[REVIEW] ${task.id}: chờ Claude review (${path.join(taskDir(task.id), `verify-${task.attempts}.md`)})`);
+  }
   const dir = taskDir(task.id);
-  const prompt = `Bạn là Reviewer dự án cv_quang. Đọc ${path.join(dir, 'spec.md')}, ${path.join(dir, `report-${task.attempts}.md`)}, ${path.join(dir, `verify-${task.attempts}.md`)} và code trong ${worktreeOf(task)}. ` +
-    `Đối chiếu từng tiêu chí nghiệm thu. Ghi nhận xét vào ${path.join(dir, 'review.md')} (nếu chưa đạt: liệt kê lỗi + cách sửa cụ thể). ` +
+  const wt = worktreeOf(task);
+  const attemptsNum = Number(task.attempts) || 1;
+  const prompt =
+    `Bạn là Reviewer dự án cv_quang. Đọc ${path.join(dir, 'spec.md')}, ${path.join(dir, `report-${attemptsNum}.md`)}, ${path.join(dir, `verify-${attemptsNum}.md`)} và code trong ${wt}. ` +
+    `Đối chiếu từng tiêu chí nghiệm thu. In toàn bộ nhận xét ra stdout (nếu chưa đạt: liệt kê lỗi + cách sửa cụ thể). ` +
     `Dòng cuối câu trả lời phải là đúng một trong: VERDICT: APPROVED | VERDICT: REWORK`;
-  const out = spawnSync('claude', ['-p', prompt, '--allowedTools', 'Read,Grep,Glob,Write'], { cwd: worktreeOf(task), encoding: 'utf8' });
-  const v = /VERDICT:\s*(APPROVED|REWORK)/.exec(out.stdout ?? '')?.[1];
-  if (v) setVerdict(task, v);
+  const bins = (whereOut.stdout ?? '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const exeBin = process.platform === 'win32' ? bins.find((b) => /\.exe$/i.test(b)) : bins[0];
+  const cmdShim = process.platform === 'win32' && !exeBin && bins.some((b) => /\.cmd$/i.test(b));
+  const timeout = Number(process.env.REVIEW_TIMEOUT_MS ?? 600000);
+  const out = spawnSync(exeBin || 'claude', ['-p', prompt, '--allowedTools', 'Read,Grep,Glob'], {
+    cwd: wt,
+    encoding: 'utf8',
+    shell: cmdShim,
+    timeout,
+  });
+  const v = out.status === 0 && !out.error ? parseVerdict(out.stdout ?? '') : null;
+  if (v) {
+    fs.writeFileSync(path.join(dir, 'review.md'), (out.stdout ?? '').trim() + '\n', 'utf8');
+    delete task.review_failed_at;
+    setVerdict(task, v);
+  } else {
+    task.review_failed_at = now();
+    save(task, `Review tự động không có verdict hợp lệ (exit=${out.status ?? 'null'}), chạy retry-review ${task.id} để thử lại`);
+  }
+}
+
+export function retryReview(task) {
+  if (task.status !== 'REVIEW') throw new Error(`${task.id} đang ${task.status}, không ở REVIEW`);
+  delete task.review_failed_at;
+  save(task, 'Xoá review_failed_at để cho phép chạy lại review');
 }
 
 function setVerdict(task, verdict) {
   if (task.status !== 'REVIEW') throw new Error(`${task.id} đang ${task.status}, không ở REVIEW`);
+  delete task.review_failed_at;
   task.status = verdict;
   save(task, verdict === 'APPROVED' ? 'Claude duyệt, chờ tech lead merge' : 'Claude yêu cầu sửa lại');
 }
@@ -291,6 +334,7 @@ const commands = {
   dispatch: () => one(dispatch),
   verify: () => one(verify),
   verdict: () => one((t) => setVerdict(t, arg?.toUpperCase())),
+  'retry-review': () => one(retryReview),
   // Mở lại việc BLOCKED vì lý do bên ngoài (không tính thêm lượt); báo cáo cũ được lưu lại để tra cứu.
   reopen: () => one((t) => {
     if (t.status !== 'BLOCKED') throw new Error(`${t.id} đang ${t.status}, không phải BLOCKED`);
@@ -302,7 +346,7 @@ const commands = {
   merge: () => one(merge),
 };
 if (!commands[cmd]) {
-  console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | reopen <id> | merge <id>');
+  console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | retry-review <id> | reopen <id> | merge <id>');
   process.exit(1);
 }
 commands[cmd]();
