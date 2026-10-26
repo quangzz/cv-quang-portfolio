@@ -218,6 +218,17 @@ export function hasJsonError(stdout) {
   return /"error"|\berror:/i.test(stdout);
 }
 
+export class ExecutorUncertainError extends Error {
+  constructor(channelName, detail = '') {
+    super(
+      `kênh ${channelName} quá thời gian, có thể agent đã chạy, kiểm tra worktree trước khi reopen${detail ? ` (${detail})` : ''}`
+    );
+    this.name = 'ExecutorUncertainError';
+    this.channel = channelName;
+    this.uncertain = true;
+  }
+}
+
 function appendExecutorLog(task, entry) {
   if (!task || !task.id) return;
   try {
@@ -236,10 +247,14 @@ function runExecutorCommand(name, cmd, task) {
   const stdout = out.stdout ?? '';
   const stderr = out.stderr ?? '';
   const errNote = out.error ? ` error=${out.error.message}` : '';
+  const sigNote = out.signal != null ? ` signal=${out.signal}` : '';
   appendExecutorLog(
     task,
-    `\n### ${now()} [${name}] ${cmd} (exit=${out.status ?? 'null'}${errNote})\n${stdout}${stderr}`
+    `\n### ${now()} [${name}] ${cmd} (exit=${out.status ?? 'null'}${sigNote}${errNote})\n${stdout}${stderr}`
   );
+  if (out.error?.code === 'ETIMEDOUT' || out.signal != null) {
+    throw new ExecutorUncertainError(name, out.error?.message || `signal=${out.signal}`);
+  }
   if (out.status !== 0 || out.error || hasJsonError(stdout)) {
     throw new Error(
       `Kênh ${name} thất bại (exit=${out.status ?? 'null'}${errNote}): ${(stdout + stderr).slice(0, 300)}`
@@ -302,11 +317,20 @@ export function sendToAntigravity(task, promptFile, channels = buildExecutorChan
     if (!isAvailable) continue;
     try {
       const res = ch.send();
+      if (res && typeof res === 'object' && (res.uncertain === true || res.error?.code === 'ETIMEDOUT' || res.signal != null)) {
+        throw new ExecutorUncertainError(ch.name, res.error?.message || `signal=${res.signal}`);
+      }
       if (res === false || (res && typeof res === 'object' && (res.ok === false || res.error || (res.status !== undefined && res.status !== 0) || hasJsonError(res.stdout ?? '')))) {
         throw new Error(res.error || res.stdout || `Kênh ${ch.name} trả về kết quả lỗi`);
       }
       return ch.name;
     } catch (e) {
+      if (e instanceof ExecutorUncertainError || e?.uncertain === true || e?.code === 'ETIMEDOUT' || e?.signal != null) {
+        const uncertainErr =
+          e instanceof ExecutorUncertainError ? e : new ExecutorUncertainError(ch.name, e.message);
+        appendExecutorLog(task, `\n### ${now()} [${ch.name}] DỪNG CHUỖI: ${uncertainErr.message}\n`);
+        throw uncertainErr;
+      }
       appendExecutorLog(task, `\n### ${now()} [${ch.name}] fallback sang kênh kế tiếp: ${e.message}\n`);
     }
   }

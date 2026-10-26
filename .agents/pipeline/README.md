@@ -82,8 +82,9 @@ Hàm `sendToAntigravity` thử tuần tự danh sách kênh `{ name, available()
 3. `agentapi`: chỉ khả dụng khi có biến môi trường `ANTIGRAVITY_LS_ADDRESS` và `agentapi` trong `PATH`.
 4. `manual`: luôn thành công, in câu lệnh ra màn hình để Tech lead dán vào khung Agent của Antigravity.
 
-- Mỗi kênh tự động chạy `spawnSync` với `timeout` mặc định `60000` ms (đổi được qua biến môi trường `EXECUTOR_TIMEOUT_MS`).
-- Nếu một kênh thất bại (mã thoát khác 0, quá thời gian `timeout`, hoặc stdout chứa `"error"`), pipeline ghi chi tiết vào `.agents/tasks/<ID>/executor.log` rồi tự động thử kênh kế tiếp cho tới `manual`. Hàm trả về tên kênh đã dùng (`EXECUTOR_CMD`, `agy`, `agentapi` hoặc `manual`) và `dispatch()` lưu tên kênh đó vào `task.history`. Nhờ vậy `tick()` không bao giờ bị dừng cứng vì lỗi gửi việc.
+- Mỗi kênh tự động chạy `spawnSync` với `timeout` mặc định `60000` ms (đổi được qua biến môi trường `EXECUTOR_TIMEOUT_MS`). Lưu ý: kênh `agy` (`agy -p`) chạy đồng bộ toàn bộ việc nên cần đặt `EXECUTOR_TIMEOUT_MS` đủ lớn.
+- Chỉ chuyển sang kênh kế tiếp khi kênh lỗi rõ ràng và chắc chắn chưa chạy (mã thoát khác 0 trong thời hạn, hoặc stdout JSON có trường `"error"`).
+- Nếu một kênh bị quá thời gian (`ETIMEDOUT` hoặc `signal` khác `null`), pipeline ghi vào `.agents/tasks/<ID>/executor.log` rồi **dừng chuỗi và ném lỗi `ExecutorUncertainError`** (không thử kênh kế tiếp để tránh hai agent cùng sửa trên một worktree). Khi đó `dispatch()` chuyển task sang `BLOCKED` (`dispatch_failed`) với ghi chú `"kênh <name> quá thời gian, có thể agent đã chạy, kiểm tra worktree trước khi reopen"`.
 
 Review tự động cần lệnh `claude` (Claude Code CLI) có trong PATH (`--allowedTools Read,Grep,Glob`, timeout mặc định `600000` ms hoặc `REVIEW_TIMEOUT_MS`). Nếu không có verdict hợp lệ ở dòng cuối, pipeline gán `review_failed_at` và dừng gọi lặp lại cho tới khi chạy `retry-review <id>`.
 

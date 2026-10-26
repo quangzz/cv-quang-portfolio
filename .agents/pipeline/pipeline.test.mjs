@@ -7,6 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  ExecutorUncertainError,
   acquireLock,
   assign,
   buildCmdLine,
@@ -405,13 +406,13 @@ test('sendToAntigravity & selectExecutor: kênh 1 lỗi thì dùng kênh 2; mọ
     };
     save(dummyTask);
 
-    // Ca 1: Kênh 1 lỗi (throw), kênh 2 thành công → trả về tên kênh 2 và ghi executor.log
+    // Ca 1: Kênh 1 lỗi rõ ràng (exit khác 0), kênh 2 thành công → trả về tên kênh 2 và ghi executor.log
     const usedChannel = sendToAntigravity(dummyTask, 'prompt-1.md', [
       {
         name: 'EXECUTOR_CMD',
         available: () => true,
         send: () => {
-          throw new Error('timeout on channel 1');
+          throw new Error('exit 1 on channel 1');
         },
       },
       {
@@ -427,7 +428,36 @@ test('sendToAntigravity & selectExecutor: kênh 1 lỗi thì dùng kênh 2; mọ
     ]);
     assert.equal(usedChannel, 'agy');
     const logContent = fs.readFileSync(path.join(dir, 'executor.log'), 'utf8');
-    assert.match(logContent, /\[EXECUTOR_CMD\].*timeout on channel 1/);
+    assert.match(logContent, /\[EXECUTOR_CMD\].*exit 1 on channel 1/);
+
+    // Ca 1b: Kênh 1 bị timeout (ETIMEDOUT / ExecutorUncertainError) → ném lỗi, KHÔNG gọi send() của kênh 2
+    let ch2SendCount = 0;
+    assert.throws(
+      () =>
+        sendToAntigravity(dummyTask, 'prompt-1.md', [
+          {
+            name: 'agy',
+            available: () => true,
+            send: () => {
+              const err = new Error('spawnSync agy ETIMEDOUT');
+              err.code = 'ETIMEDOUT';
+              throw err;
+            },
+          },
+          {
+            name: 'agentapi',
+            available: () => true,
+            send: () => {
+              ch2SendCount += 1;
+              return true;
+            },
+          },
+        ]),
+      (err) =>
+        err instanceof ExecutorUncertainError &&
+        /kênh agy quá thời gian, có thể agent đã chạy, kiểm tra worktree trước khi reopen/.test(err.message)
+    );
+    assert.equal(ch2SendCount, 0, 'Timeout ở kênh 1 tuyệt đối không được gọi send() của kênh 2');
 
     // Ca 2: Mọi kênh tự động đều lỗi → rơi về manual
     const fallbackManual = selectExecutor(
