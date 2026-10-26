@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "agents": "node .agents/pipeline/pipeline.mjs"
+    "agents": "node .agents/pipeline/pipeline.mjs",
+    "test:agents": "node --test .agents/pipeline/*.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",
