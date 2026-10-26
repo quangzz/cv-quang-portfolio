@@ -7,6 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { compactBuildLog, compactDiff } from './compact-evidence.mjs';
 
 const DEFAULT_REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const getRepo = () => (process.env.REPO ? path.resolve(process.env.REPO) : DEFAULT_REPO);
@@ -311,26 +312,28 @@ export function verify(task) {
   const build = spawnSync(buildCm, { shell: true, cwd: wt, encoding: 'utf8' });
   const statusShort = git(['status', '--short'], wt);
   const outside = outOfScope(task, wt);
+  const diffStat = git(['diff', '--stat', `${BASE_BRANCH}...HEAD`], wt);
   const fullDiff = git(['diff', `${BASE_BRANCH}...HEAD`], wt);
-  const MAX_DIFF = 60000;
-  const diffOut =
-    fullDiff.length > MAX_DIFF
-      ? `${fullDiff.slice(0, MAX_DIFF)}\n(diff đã cắt, xem toàn văn bằng git diff)`
-      : fullDiff;
+  const patchFile = path.join(dir, `diff-${task.attempts}.patch`);
+  fs.writeFileSync(patchFile, fullDiff ? `${fullDiff}\n` : '', 'utf8');
+  const rawBuildLog = (build.stdout ?? '') + (build.stderr ?? '');
+  const compactedLog = compactBuildLog(rawBuildLog);
+  const compactedDiff = compactDiff(fullDiff);
   task.verified_commit = git(['rev-parse', 'HEAD'], wt);
   const evidence = [
     `# Bằng chứng tự kiểm ${task.id} lượt ${task.attempts} (${now()})`,
     `## git log ${BASE_BRANCH}..HEAD\n\`\`\`\n${git(['log', `${BASE_BRANCH}..HEAD`, '--oneline'], wt)}\n\`\`\``,
+    `## git diff --stat\n\`\`\`\n${diffStat || '(trống)'}\n\`\`\``,
     `## git status (phải sạch)\n\`\`\`\n${statusShort || '(sạch)'}\n\`\`\``,
     `## Ngoài phạm vi\n${outside.map((f) => `- ${f}`).join('\n') || '(không có)'}`,
-    `## ${buildCm} → exit ${build.status}\n\`\`\`\n${((build.stdout ?? '') + (build.stderr ?? '')).slice(-3000)}\n\`\`\``,
-    `## Diff\n\`\`\`diff\n${diffOut}\n\`\`\``,
+    `## ${buildCm} → exit ${build.status}\n\`\`\`\n${compactedLog}\n\`\`\``,
+    `## Diff (đã nén, bản đầy đủ tại: \`${patchFile}\`)\n\`\`\`diff\n${compactedDiff}\n\`\`\``,
   ].join('\n\n');
   fs.writeFileSync(path.join(dir, `verify-${task.attempts}.md`), evidence);
   const reasons = [];
   if (build.status !== 0) {
     reasons.push(
-      `- Lệnh build thất bại (exit ${build.status}):\n\`\`\`\n${((build.stdout ?? '') + (build.stderr ?? '')).slice(-1500)}\n\`\`\``
+      `- Lệnh build thất bại (exit ${build.status}):\n\`\`\`\n${compactedLog}\n\`\`\``
     );
   }
   if (outside.length > 0) {
