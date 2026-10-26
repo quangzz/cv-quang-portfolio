@@ -204,6 +204,7 @@ ${rework ? `\n## Phản hồi review lượt trước (phải xử lý hết)\n$
 
 export function hasJsonError(stdout) {
   if (typeof stdout !== 'string' || !stdout.trim()) return false;
+  if (/"error"\s*:\s*(null|false|0|"")\b/.test(stdout)) return false;
   for (const line of stdout.trim().split(/\r?\n/)) {
     try {
       const parsed = JSON.parse(line.trim());
@@ -212,32 +213,114 @@ export function hasJsonError(stdout) {
   }
   try {
     const parsed = JSON.parse(stdout.trim());
-    return Boolean(parsed && typeof parsed === 'object' && parsed.error);
-  } catch {
-    return false;
-  }
+    if (parsed && typeof parsed === 'object' && Boolean(parsed.error)) return true;
+  } catch {}
+  return /"error"|\berror:/i.test(stdout);
 }
 
-// Gửi việc sang Antigravity. Ưu tiên: lệnh tự cấu hình → agy CLI → agentapi (chạy trong terminal Antigravity) → thủ công.
-export function sendToAntigravity(task, promptFile) {
-  const short = `Đọc và làm đúng toàn bộ yêu cầu trong file ${promptFile}`;
-  const has = (bin) => spawnSync(process.platform === 'win32' ? 'where' : 'which', [bin]).status === 0;
-  let cmd;
-  if (process.env.EXECUTOR_CMD) cmd = process.env.EXECUTOR_CMD.replace('{prompt}', short).replace('{promptFile}', promptFile);
-  else if (has('agy')) cmd = `agy -p "${short}"`;
-  else if (process.env.ANTIGRAVITY_LS_ADDRESS && has('agentapi')) cmd = `agentapi new-conversation --model=pro --title="${task.id}" "${short}"`;
+function appendExecutorLog(task, entry) {
+  if (!task || !task.id) return;
+  try {
+    const dir = taskDir(task.id);
+    if (fs.existsSync(dir)) {
+      fs.appendFileSync(path.join(dir, 'executor.log'), entry, 'utf8');
+    }
+  } catch {}
+}
 
-  if (!cmd) {
-    console.log(`\n[THỦ CÔNG] Chưa có kênh tự động tới Antigravity. Dán câu sau vào Antigravity Agent:\n  ${short}\n`);
-    return 'manual';
+function runExecutorCommand(name, cmd, task) {
+  const timeout = Number(process.env.EXECUTOR_TIMEOUT_MS ?? 60000);
+  console.log(`[GỬI:${name}] ${cmd}`);
+  const cwd = task && task.id && fs.existsSync(worktreeOf(task)) ? worktreeOf(task) : getRepo();
+  const out = spawnSync(cmd, { shell: true, cwd, encoding: 'utf8', timeout });
+  const stdout = out.stdout ?? '';
+  const stderr = out.stderr ?? '';
+  const errNote = out.error ? ` error=${out.error.message}` : '';
+  appendExecutorLog(
+    task,
+    `\n### ${now()} [${name}] ${cmd} (exit=${out.status ?? 'null'}${errNote})\n${stdout}${stderr}`
+  );
+  if (out.status !== 0 || out.error || hasJsonError(stdout)) {
+    throw new Error(
+      `Kênh ${name} thất bại (exit=${out.status ?? 'null'}${errNote}): ${(stdout + stderr).slice(0, 300)}`
+    );
   }
-  console.log(`[GỬI] ${cmd}`);
-  const out = spawnSync(cmd, { shell: true, cwd: worktreeOf(task), encoding: 'utf8' });
-  fs.appendFileSync(path.join(taskDir(task.id), 'executor.log'), `\n### ${now()} ${cmd}\n${out.stdout ?? ''}${out.stderr ?? ''}`);
-  if (out.status !== 0 || out.error || hasJsonError(out.stdout ?? '')) {
-    throw new Error(`Gửi việc thất bại: ${((out.stdout ?? '') + (out.stderr ?? '')).slice(0, 300)}`);
+  return true;
+}
+
+export function buildExecutorChannels(task, promptFile) {
+  const short = `Đọc và làm đúng toàn bộ yêu cầu trong file ${promptFile}`;
+  const hasBin = (bin) => spawnSync(process.platform === 'win32' ? 'where' : 'which', [bin]).status === 0;
+  return [
+    {
+      name: 'EXECUTOR_CMD',
+      available: () => Boolean(process.env.EXECUTOR_CMD),
+      send: () => {
+        const cmd = process.env.EXECUTOR_CMD.replace('{prompt}', short).replace('{promptFile}', promptFile);
+        return runExecutorCommand('EXECUTOR_CMD', cmd, task);
+      },
+    },
+    {
+      name: 'agy',
+      available: () => hasBin('agy'),
+      send: () => runExecutorCommand('agy', `agy -p "${short}"`, task),
+    },
+    {
+      name: 'agentapi',
+      available: () => Boolean(process.env.ANTIGRAVITY_LS_ADDRESS) && hasBin('agentapi'),
+      send: () =>
+        runExecutorCommand(
+          'agentapi',
+          `agentapi new-conversation --model=pro --title="${task.id}" "${short}"`,
+          task
+        ),
+    },
+    {
+      name: 'manual',
+      available: () => true,
+      send: () => {
+        console.log(
+          `\n[THỦ CÔNG] Chưa có kênh tự động tới Antigravity. Dán câu sau vào Antigravity Agent:\n  ${short}\n`
+        );
+        return true;
+      },
+    },
+  ];
+}
+
+// Gửi việc sang Antigravity qua chuỗi kênh có fallback: EXECUTOR_CMD → agy → agentapi → manual.
+export function sendToAntigravity(task, promptFile, channels = buildExecutorChannels(task, promptFile)) {
+  const short = `Đọc và làm đúng toàn bộ yêu cầu trong file ${promptFile}`;
+  for (const ch of channels) {
+    let isAvailable = false;
+    try {
+      isAvailable = Boolean(ch.available());
+    } catch (e) {
+      appendExecutorLog(task, `\n### ${now()} [${ch.name}] available() lỗi: ${e.message}\n`);
+      continue;
+    }
+    if (!isAvailable) continue;
+    try {
+      const res = ch.send();
+      if (res === false || (res && typeof res === 'object' && (res.ok === false || res.error || (res.status !== undefined && res.status !== 0) || hasJsonError(res.stdout ?? '')))) {
+        throw new Error(res.error || res.stdout || `Kênh ${ch.name} trả về kết quả lỗi`);
+      }
+      return ch.name;
+    } catch (e) {
+      appendExecutorLog(task, `\n### ${now()} [${ch.name}] fallback sang kênh kế tiếp: ${e.message}\n`);
+    }
   }
-  return 'sent';
+  console.log(
+    `\n[THỦ CÔNG] Mọi kênh tự động đều lỗi. Dán câu sau vào Antigravity Agent:\n  ${short}\n`
+  );
+  return 'manual';
+}
+
+export function selectExecutor(arg1, arg2, arg3) {
+  if (Array.isArray(arg1)) {
+    return sendToAntigravity(arg2 ?? { id: 'T-1' }, arg3 ?? 'prompt-1.md', arg1);
+  }
+  return sendToAntigravity(arg1, arg2, arg3);
 }
 
 export function dispatch(task) {
