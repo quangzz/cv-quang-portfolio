@@ -27,8 +27,10 @@ Thư mục này chỉ nằm ở repo chính và không commit.
 | `spec.md` | Claude | Việc cần làm + tiêu chí nghiệm thu |
 | `prompt-N.md` | pipeline | Prompt hoàn chỉnh gửi Antigravity ở lượt N |
 | `report-N.md` | Antigravity | Báo cáo 7 mục, dòng cuối là `STATUS: DONE` hoặc `STATUS: BLOCKED - <lý do>` |
-| `verify-N.md` | pipeline | Bằng chứng tự kiểm: log commit, `git status`, file ngoài phạm vi (`--no-renames`), build, diff |
+| `diff-N.patch` | pipeline | Bản diff đầy đủ (`stage...HEAD`) của lượt N để reviewer mở khi cần |
+| `verify-N.md` | pipeline | Bằng chứng tự kiểm: log commit, `git diff --stat`, `git status`, file ngoài phạm vi (`--no-renames`), build log đã nén (`compactBuildLog`), diff đã nén (`compactDiff`) kèm đường dẫn tới `diff-N.patch` |
 | `review.md` | pipeline / Claude | Nhận xét (từ `verify()` tự động hoặc từ Claude). Nếu REWORK thì được gửi kèm ở lượt sau |
+| `executor.log` | pipeline | Nhật ký các lần thử kênh gửi việc sang Antigravity và lý do fallback |
 
 ## Lệnh
 
@@ -65,12 +67,31 @@ Khi một task chuyển sang `BLOCKED`, pipeline lưu trường `blocked_reason`
   - Nếu là thư mục thật (`isDirectory()`): từ chối xoá và ném lỗi rõ ràng để bảo vệ dữ liệu.
 - **Chống chèn lệnh (Command Injection):** Mọi lệnh `git` đều gọi qua `execFileSync('git', [...args])` không qua shell; `validateTask()` kiểm tra chặt `id`, `branch` và `files` ngay trong `load()`.
 
-## Kênh gửi việc sang Antigravity
+## Nén bằng chứng kiểu RTK (`compact-evidence.mjs`) & file `diff-N.patch`
 
-Pipeline thử lần lượt theo thứ tự:
-1. `EXECUTOR_CMD`: lệnh tự cấu hình. Có thể dùng `{prompt}` hoặc `{promptFile}` trong lệnh.
-2. `agy` (Antigravity CLI headless), nếu đã cài.
-3. `agentapi new-conversation`: chỉ chạy được trong **terminal tích hợp của Antigravity**, vì ở đó có biến `ANTIGRAVITY_LS_ADDRESS`.
-4. Thủ công: in ra một câu để dán vào khung Agent của Antigravity.
+- **Lưu diff đầy đủ (`diff-N.patch`):** Mỗi lần `verify()` chạy ở lượt `N`, toàn bộ `git diff stage...HEAD` được ghi nguyên văn ra `.agents/tasks/<ID>/diff-<N>.patch`.
+- **Nén diff (`compactDiff`):** Giữ header của mọi file thay đổi, thêm dòng thống kê `+N -M` cho từng file, lược bỏ các dòng ngữ cảnh ở xa thay đổi (cách dòng `+`/`-` quá 1 dòng), và giới hạn mỗi hunk tối đa `maxHunkLines` dòng (mặc định `40` dòng, phần dư thay bằng `… (đã lược K dòng)`).
+- **Nén build log (`compactBuildLog`):** Xoá mã màu ANSI, giữ mọi dòng chứa `error`, `Error`, `warning`, `TS\d+`, `✗`, `failed`, gộp các dòng trùng liên tiếp kèm `(×n)`, và giữ 30 dòng cuối của log.
+- **Cơ chế Fail-open:** Cả `compactDiff` và `compactBuildLog` đều bọc `try/catch`; nếu đầu vào gây lỗi hoặc kết quả sau nén rỗng trong khi đầu vào không rỗng thì trả lại nguyên văn chuỗi gốc.
+
+## Chuỗi kênh gửi việc sang Antigravity (Fallback Chain)
+
+Hàm `sendToAntigravity` thử tuần tự danh sách kênh `{ name, available(), send() }` theo thứ tự:
+1. `EXECUTOR_CMD`: lệnh tự cấu hình (có thể dùng `{prompt}` hoặc `{promptFile}`).
+2. `agy` (Antigravity CLI headless), nếu có trong `PATH`.
+3. `agentapi`: chỉ khả dụng khi có biến môi trường `ANTIGRAVITY_LS_ADDRESS` và `agentapi` trong `PATH`.
+4. `manual`: luôn thành công, in câu lệnh ra màn hình để Tech lead dán vào khung Agent của Antigravity.
+
+- Mỗi kênh tự động chạy `spawnSync` với `timeout` mặc định `60000` ms (đổi được qua biến môi trường `EXECUTOR_TIMEOUT_MS`). Lưu ý: kênh `agy` (`agy -p`) chạy đồng bộ toàn bộ việc nên cần đặt `EXECUTOR_TIMEOUT_MS` đủ lớn.
+- Chỉ chuyển sang kênh kế tiếp khi kênh lỗi rõ ràng và chắc chắn chưa chạy (mã thoát khác 0 trong thời hạn, hoặc stdout JSON có trường `"error"`).
+- Nếu một kênh bị quá thời gian (`ETIMEDOUT` hoặc `signal` khác `null`), pipeline ghi vào `.agents/tasks/<ID>/executor.log` rồi **dừng chuỗi và ném lỗi `ExecutorUncertainError`** (không thử kênh kế tiếp để tránh hai agent cùng sửa trên một worktree). Khi đó `dispatch()` chuyển task sang `BLOCKED` (`dispatch_failed`) với ghi chú `"kênh <name> quá thời gian, có thể agent đã chạy, kiểm tra worktree trước khi reopen"`.
 
 Review tự động cần lệnh `claude` (Claude Code CLI) có trong PATH (`--allowedTools Read,Grep,Glob`, timeout mặc định `600000` ms hoặc `REVIEW_TIMEOUT_MS`). Nếu không có verdict hợp lệ ở dòng cuối, pipeline gán `review_failed_at` và dừng gọi lặp lại cho tới khi chạy `retry-review <id>`.
+
+## Kiểm thử tự động (`node:test`)
+
+Chạy toàn bộ unit test của pipeline (`pipeline.test.mjs` và `compact-evidence.test.mjs`) trên thư mục tạm tách biệt (`fs.mkdtempSync`), không đụng `.agents/tasks` thật:
+
+```bash
+npm run test:agents
+```

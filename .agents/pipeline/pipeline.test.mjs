@@ -7,6 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  ExecutorUncertainError,
   acquireLock,
   assign,
   buildCmdLine,
@@ -21,6 +22,7 @@ import {
   reopen,
   safeTick,
   save,
+  sendToAntigravity,
   setVerdict,
   status,
   validateTask,
@@ -312,6 +314,10 @@ test('verify, merge, lock và status: luồng tự kiểm lưu verified_commit, 
     const verified = load('T-2');
     assert.equal(verified.status, 'REVIEW');
     assert.ok(verified.verified_commit, 'Phải lưu verified_commit');
+    assert.equal(fs.existsSync(path.join(dir, 'diff-1.patch')), true, 'Phải lưu diff-1.patch đầy đủ');
+    const verifyMd = fs.readFileSync(path.join(dir, 'verify-1.md'), 'utf8');
+    assert.match(verifyMd, /## git diff --stat/);
+    assert.ok(verifyMd.includes('diff-1.patch'), 'verify-1.md phải ghi đường dẫn file .patch');
 
     setVerdict(verified, 'approved');
     assert.equal(load('T-2').status, 'APPROVED');
@@ -322,8 +328,10 @@ test('verify, merge, lock và status: luồng tự kiểm lưu verified_commit, 
     assert.equal(fs.existsSync(wt), false);
 
     // Kiểm tra hasJsonError
-    assert.equal(hasJsonError('{"error": null}'), false);
-    assert.equal(hasJsonError('{"error": "bad request"}'), true);
+    assert.equal(hasJsonError('0 error: none'), false);
+    assert.equal(hasJsonError('{"error":null}'), false);
+    assert.equal(hasJsonError('{"error":""}'), false);
+    assert.equal(hasJsonError('{"error":"ANTIGRAVITY_LS_ADDRESS is not set"}'), true);
 
     // Kiểm tra khoá .lock chặn truy cập đồng thời và gỡ khoá cũ
     const release = acquireLock(board);
@@ -375,6 +383,109 @@ test('verify, merge, lock và status: luồng tự kiểm lưu verified_commit, 
     else process.env.BOARD = prevBoard;
     if (prevBuild === undefined) delete process.env.BUILD_CMD;
     else process.env.BUILD_CMD = prevBuild;
+    cleanupTempRoot(root);
+  }
+});
+
+test('sendToAntigravity: kênh 1 lỗi thì dùng kênh 2; timeout thì dừng chuỗi; mọi kênh lỗi thì rơi về manual', () => {
+  const { root, repo, board } = initTempGitRepo();
+  const prevRepo = process.env.REPO;
+  const prevBoard = process.env.BOARD;
+  process.env.REPO = repo;
+  process.env.BOARD = board;
+  try {
+    const dir = path.join(board, 'T-3');
+    fs.mkdirSync(dir, { recursive: true });
+    const dummyTask = {
+      id: 'T-3',
+      title: 'Test executor fallback',
+      status: 'IN_PROGRESS',
+      branch: 'feat/t-3',
+      files: ['src'],
+      attempts: 1,
+      max_attempts: 3,
+    };
+    save(dummyTask);
+
+    // Ca 1: Kênh 1 lỗi rõ ràng (exit khác 0), kênh 2 thành công → trả về tên kênh 2 và ghi executor.log
+    const usedChannel = sendToAntigravity(dummyTask, 'prompt-1.md', [
+      {
+        name: 'EXECUTOR_CMD',
+        available: () => true,
+        send: () => {
+          throw new Error('exit 1 on channel 1');
+        },
+      },
+      {
+        name: 'agy',
+        available: () => true,
+        send: () => true,
+      },
+      {
+        name: 'manual',
+        available: () => true,
+        send: () => true,
+      },
+    ]);
+    assert.equal(usedChannel, 'agy');
+    const logContent = fs.readFileSync(path.join(dir, 'executor.log'), 'utf8');
+    assert.match(logContent, /\[EXECUTOR_CMD\].*exit 1 on channel 1/);
+
+    // Ca 1b: Kênh 1 bị timeout (ETIMEDOUT / ExecutorUncertainError) → ném lỗi, KHÔNG gọi send() của kênh 2
+    let ch2SendCount = 0;
+    assert.throws(
+      () =>
+        sendToAntigravity(dummyTask, 'prompt-1.md', [
+          {
+            name: 'agy',
+            available: () => true,
+            send: () => {
+              const err = new Error('spawnSync agy ETIMEDOUT');
+              err.code = 'ETIMEDOUT';
+              throw err;
+            },
+          },
+          {
+            name: 'agentapi',
+            available: () => true,
+            send: () => {
+              ch2SendCount += 1;
+              return true;
+            },
+          },
+        ]),
+      (err) =>
+        err instanceof ExecutorUncertainError &&
+        /kênh agy quá thời gian, có thể agent đã chạy, kiểm tra worktree trước khi reopen/.test(err.message)
+    );
+    assert.equal(ch2SendCount, 0, 'Timeout ở kênh 1 tuyệt đối không được gọi send() của kênh 2');
+
+    // Ca 2: Mọi kênh tự động đều lỗi → rơi về manual
+    const fallbackManual = sendToAntigravity(dummyTask, 'prompt-1.md', [
+      {
+        name: 'EXECUTOR_CMD',
+        available: () => true,
+        send: () => {
+          throw new Error('fail 1');
+        },
+      },
+      {
+        name: 'agy',
+        available: () => true,
+        send: () => ({ status: 1, stdout: '{"error":"bad"}' }),
+      },
+      {
+        name: 'manual',
+        available: () => true,
+        send: () => true,
+      },
+    ]);
+    assert.equal(fallbackManual, 'manual');
+  } finally {
+    if (prevRepo === undefined) delete process.env.REPO;
+    else process.env.REPO = prevRepo;
+    if (prevBoard === undefined) delete process.env.BOARD;
+    else process.env.BOARD = prevBoard;
     cleanupTempRoot(root);
   }
 });
