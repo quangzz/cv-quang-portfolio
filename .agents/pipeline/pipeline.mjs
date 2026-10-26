@@ -3,19 +3,49 @@
 // Luồng: PLANNED → ASSIGNED → IN_PROGRESS → VERIFY → REVIEW → APPROVED → MERGED
 //                       ↑                                  └→ REWORK ─┘ (quá max_attempts → BLOCKED)
 // Chạy: node .agents/pipeline/pipeline.mjs <lệnh> [id]
-import { execSync, spawnSync } from 'node:child_process';
+import { execFileSync, execSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const BOARD = path.join(REPO, '.agents', 'tasks');
+const DEFAULT_REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+export const getRepo = () => (process.env.REPO ? path.resolve(process.env.REPO) : DEFAULT_REPO);
+export const getBoard = () => (process.env.BOARD ? path.resolve(process.env.BOARD) : path.join(getRepo(), '.agents', 'tasks'));
 const BASE_BRANCH = 'stage';
 const BUILD_CMD = 'npm run build';
 
-const sh = (cmd, cwd = REPO) => execSync(cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-const taskDir = (id) => path.join(BOARD, id);
+const sh = (cmd, cwd = getRepo()) => execSync(cmd, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+const taskDir = (id) => path.join(getBoard(), id);
 const now = () => new Date().toISOString();
+
+export function removeWorktree(wt, repo = getRepo()) {
+  const nm = path.join(wt, 'node_modules');
+  let stat = null;
+  try {
+    stat = fs.lstatSync(nm);
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  if (stat) {
+    if (stat.isSymbolicLink()) {
+      try {
+        fs.unlinkSync(nm);
+      } catch {
+        const r = spawnSync('cmd', ['/c', 'rmdir', nm], { encoding: 'utf8' });
+        if (r.status !== 0 && fs.existsSync(nm)) {
+          throw new Error(`Không gỡ được junction node_modules tại ${nm}: ${r.stderr || r.stdout}`);
+        }
+      }
+    } else if (stat.isDirectory()) {
+      throw new Error(`Từ chối xoá worktree ${wt}: node_modules là thư mục thật, không tự xoá`);
+    }
+  }
+  execFileSync('git', ['worktree', 'remove', wt], {
+    cwd: repo,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
 
 function load(id) {
   const file = path.join(taskDir(id), 'task.json');
@@ -30,16 +60,18 @@ function save(task, note) {
 }
 
 function listTasks() {
-  if (!fs.existsSync(BOARD)) return [];
-  return fs.readdirSync(BOARD).filter((d) => fs.existsSync(path.join(BOARD, d, 'task.json'))).sort().map(load);
+  const board = getBoard();
+  if (!fs.existsSync(board)) return [];
+  return fs.readdirSync(board).filter((d) => fs.existsSync(path.join(board, d, 'task.json'))).sort().map(load);
 }
 
-const worktreeOf = (task) => `${REPO}_worktree_${task.id.toLowerCase()}`;
+const worktreeOf = (task) => `${getRepo()}_worktree_${task.id.toLowerCase()}`;
 
 function ensureWorktree(task) {
+  const repo = getRepo();
   const wt = worktreeOf(task);
   if (!fs.existsSync(wt)) {
-    const branchExists = spawnSync('git', ['rev-parse', '--verify', '--quiet', task.branch], { cwd: REPO }).status === 0;
+    const branchExists = spawnSync('git', ['rev-parse', '--verify', '--quiet', task.branch], { cwd: repo }).status === 0;
     sh(branchExists ? `git worktree add "${wt}" ${task.branch}` : `git worktree add -b ${task.branch} "${wt}" ${BASE_BRANCH}`);
   }
   return wt;
@@ -54,7 +86,7 @@ function writeAgentPrompt(task, wt) {
 
 Bạn là **Agent** trong luồng 3 bên của dự án cv_quang. Bắt buộc đọc và tuân thủ \`${path.join(wt, 'AGENTS.md')}\`.
 
-- Làm việc DUY NHẤT trong worktree: \`${wt}\` (nhánh \`${task.branch}\`, tạo từ \`${BASE_BRANCH}\`). Không đụng repo chính \`${REPO}\`.
+- Làm việc DUY NHẤT trong worktree: \`${wt}\` (nhánh \`${task.branch}\`, tạo từ \`${BASE_BRANCH}\`). Không đụng repo chính \`${getRepo()}\`.
 - Chỉ sửa các file trong phạm vi: ${task.files.map((f) => `\`${f}\``).join(', ')}.
 - Commit nhỏ theo từng mục, đúng chuẩn commit trong AGENTS.md mục 9. KHÔNG merge, push, deploy.
 
@@ -166,9 +198,9 @@ function merge(task) {
   if (sh('git status --porcelain')) throw new Error('Repo chính không sạch, dừng');
   sh(`git switch ${BASE_BRANCH}`);
   sh(`git merge --no-ff ${task.branch} -m "merge(${task.id}): ${task.title}"`);
-  const build = spawnSync(BUILD_CMD, { shell: true, cwd: REPO, encoding: 'utf8' });
+  const build = spawnSync(BUILD_CMD, { shell: true, cwd: getRepo(), encoding: 'utf8' });
   if (build.status !== 0) throw new Error('Build sau merge lỗi, kiểm tra trước khi push');
-  sh(`git worktree remove "${worktreeOf(task)}"`);
+  removeWorktree(worktreeOf(task));
   sh(`git branch -d ${task.branch}`);
   task.status = 'MERGED';
   save(task, `Đã merge vào ${BASE_BRANCH} (chưa push)`);
