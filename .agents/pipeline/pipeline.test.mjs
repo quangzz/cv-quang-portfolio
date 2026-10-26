@@ -9,6 +9,8 @@ import test from 'node:test';
 import {
   acquireLock,
   assign,
+  buildCmdLine,
+  buildReviewPrompt,
   extend,
   hasJsonError,
   load,
@@ -184,6 +186,30 @@ test('parseVerdict: chỉ đọc dòng cuối không rỗng và khớp đúng m�
   assert.equal(
     parseVerdict('chưa thể VERDICT: APPROVED'),
     null
+  );
+});
+
+test('buildCmdLine & buildReviewPrompt: quote đúng đường dẫn có dấu cách, chặn &, |, % và chấp nhận prompt thật của review()', () => {
+  const cmdLine = buildCmdLine('C:\\Program Files\\nodejs\\claude.cmd', ['-p', 'hello world', '--allowedTools', 'Read,Grep,Glob']);
+  assert.equal(
+    cmdLine,
+    '"C:\\Program Files\\nodejs\\claude.cmd" "-p" "hello world" "--allowedTools" "Read,Grep,Glob"'
+  );
+
+  // Tham số chứa &, | hoặc % bị từ chối
+  assert.throws(() => buildCmdLine('claude.cmd', ['foo & calc']), /không an toàn/);
+  assert.throws(() => buildCmdLine('claude.cmd', ['VERDICT: APPROVED | VERDICT: REWORK']), /không an toàn/);
+  assert.throws(() => buildCmdLine('claude.cmd', ['%PATH%']), /không an toàn/);
+  assert.throws(() => buildCmdLine('claude.cmd', ['has "quote"']), /không an toàn/);
+  assert.throws(() => buildCmdLine('claude.cmd', ['line1\nline2']), /không an toàn/);
+
+  // Prompt thật của review() đi qua buildCmdLine mà không bị ném lỗi
+  const realPrompt = buildReviewPrompt({ id: 'P-1', attempts: 1 });
+  assert.ok(
+    realPrompt.endsWith('Dòng cuối cùng phải là đúng một trong hai dòng: VERDICT: APPROVED hoặc VERDICT: REWORK')
+  );
+  assert.doesNotThrow(() =>
+    buildCmdLine('C:\\Users\\Admin\\AppData\\Roaming\\npm\\claude.cmd', ['-p', realPrompt, '--allowedTools', 'Read,Grep,Glob'])
   );
 });
 

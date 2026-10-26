@@ -376,6 +376,29 @@ export function parseVerdict(stdout) {
   return m ? m[1] : null;
 }
 
+const UNSAFE_CMD_ARG_RE = /["%^&|<>\r\n]/;
+
+export function buildCmdLine(shimPath, args = []) {
+  const all = [shimPath, ...args];
+  for (const item of all) {
+    if (typeof item !== 'string' || item.length === 0 || UNSAFE_CMD_ARG_RE.test(item)) {
+      throw new Error(`Tham số dòng lệnh cmd.exe chứa ký tự không an toàn: ${JSON.stringify(item)}`);
+    }
+  }
+  return all.map((a) => `"${a}"`).join(' ');
+}
+
+export function buildReviewPrompt(task) {
+  const dir = taskDir(task.id);
+  const wt = worktreeOf(task);
+  const attemptsNum = Number(task.attempts) || 1;
+  return (
+    `Bạn là Reviewer dự án cv_quang. Đọc ${path.join(dir, 'spec.md')}, ${path.join(dir, `report-${attemptsNum}.md`)}, ${path.join(dir, `verify-${attemptsNum}.md`)} và code trong ${wt}. ` +
+    `Đối chiếu từng tiêu chí nghiệm thu. In toàn bộ nhận xét ra stdout (nếu chưa đạt: liệt kê lỗi + cách sửa cụ thể). ` +
+    `Dòng cuối cùng phải là đúng một trong hai dòng: VERDICT: APPROVED hoặc VERDICT: REWORK`
+  );
+}
+
 // Claude review: tự động nếu có `claude` CLI, nếu không thì để phiên Claude Code đọc verify-*.md và gọi `verdict`.
 export function review(task) {
   if (task.status !== 'REVIEW' || task.review_failed_at) return;
@@ -385,24 +408,31 @@ export function review(task) {
   }
   const dir = taskDir(task.id);
   const wt = worktreeOf(task);
-  const attemptsNum = Number(task.attempts) || 1;
-  const prompt =
-    `Bạn là Reviewer dự án cv_quang. Đọc ${path.join(dir, 'spec.md')}, ${path.join(dir, `report-${attemptsNum}.md`)}, ${path.join(dir, `verify-${attemptsNum}.md`)} và code trong ${wt}. ` +
-    `Đối chiếu từng tiêu chí nghiệm thu. In toàn bộ nhận xét ra stdout (nếu chưa đạt: liệt kê lỗi + cách sửa cụ thể). ` +
-    `Dòng cuối câu trả lời phải là đúng một trong: VERDICT: APPROVED | VERDICT: REWORK`;
+  const prompt = buildReviewPrompt(task);
+  const reviewArgs = ['-p', prompt, '--allowedTools', 'Read,Grep,Glob'];
   const bins = (whereOut.stdout ?? '')
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean);
   const exeBin = process.platform === 'win32' ? bins.find((b) => /\.exe$/i.test(b)) : bins[0];
-  const cmdShim = process.platform === 'win32' && !exeBin && bins.some((b) => /\.cmd$/i.test(b));
+  const cmdBin = process.platform === 'win32' && !exeBin ? bins.find((b) => /\.cmd$/i.test(b)) : null;
   const timeout = Number(process.env.REVIEW_TIMEOUT_MS ?? 600000);
-  const out = spawnSync(exeBin || 'claude', ['-p', prompt, '--allowedTools', 'Read,Grep,Glob'], {
-    cwd: wt,
-    encoding: 'utf8',
-    shell: cmdShim,
-    timeout,
-  });
+  let out;
+  if (cmdBin) {
+    const cmdLine = buildCmdLine(cmdBin, reviewArgs);
+    out = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${cmdLine}"`], {
+      cwd: wt,
+      encoding: 'utf8',
+      windowsVerbatimArguments: true,
+      timeout,
+    });
+  } else {
+    out = spawnSync(exeBin || 'claude', reviewArgs, {
+      cwd: wt,
+      encoding: 'utf8',
+      timeout,
+    });
+  }
   const v = out.status === 0 && !out.error ? parseVerdict(out.stdout ?? '') : null;
   if (v) {
     fs.writeFileSync(path.join(dir, 'review.md'), (out.stdout ?? '').trim() + '\n', 'utf8');
