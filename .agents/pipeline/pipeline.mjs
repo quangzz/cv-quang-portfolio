@@ -340,13 +340,6 @@ export function sendToAntigravity(task, promptFile, channels = buildExecutorChan
   return 'manual';
 }
 
-export function selectExecutor(arg1, arg2, arg3) {
-  if (Array.isArray(arg1)) {
-    return sendToAntigravity(arg2 ?? { id: 'T-1' }, arg3 ?? 'prompt-1.md', arg1);
-  }
-  return sendToAntigravity(arg1, arg2, arg3);
-}
-
 export function dispatch(task) {
   if (!['ASSIGNED', 'REWORK'].includes(task.status)) return;
   const specFile = path.join(taskDir(task.id), 'spec.md');

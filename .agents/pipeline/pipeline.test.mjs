@@ -22,7 +22,6 @@ import {
   reopen,
   safeTick,
   save,
-  selectExecutor,
   sendToAntigravity,
   setVerdict,
   status,
@@ -388,7 +387,7 @@ test('verify, merge, lock và status: luồng tự kiểm lưu verified_commit, 
   }
 });
 
-test('sendToAntigravity & selectExecutor: kênh 1 lỗi thì dùng kênh 2; mọi kênh lỗi thì rơi về manual', () => {
+test('sendToAntigravity: kênh 1 lỗi thì dùng kênh 2; timeout thì dừng chuỗi; mọi kênh lỗi thì rơi về manual', () => {
   const { root, repo, board } = initTempGitRepo();
   const prevRepo = process.env.REPO;
   const prevBoard = process.env.BOARD;
@@ -462,29 +461,25 @@ test('sendToAntigravity & selectExecutor: kênh 1 lỗi thì dùng kênh 2; mọ
     assert.equal(ch2SendCount, 0, 'Timeout ở kênh 1 tuyệt đối không được gọi send() của kênh 2');
 
     // Ca 2: Mọi kênh tự động đều lỗi → rơi về manual
-    const fallbackManual = selectExecutor(
-      [
-        {
-          name: 'EXECUTOR_CMD',
-          available: () => true,
-          send: () => {
-            throw new Error('fail 1');
-          },
+    const fallbackManual = sendToAntigravity(dummyTask, 'prompt-1.md', [
+      {
+        name: 'EXECUTOR_CMD',
+        available: () => true,
+        send: () => {
+          throw new Error('fail 1');
         },
-        {
-          name: 'agy',
-          available: () => true,
-          send: () => ({ status: 1, stdout: '{"error":"bad"}' }),
-        },
-        {
-          name: 'manual',
-          available: () => true,
-          send: () => true,
-        },
-      ],
-      dummyTask,
-      'prompt-1.md'
-    );
+      },
+      {
+        name: 'agy',
+        available: () => true,
+        send: () => ({ status: 1, stdout: '{"error":"bad"}' }),
+      },
+      {
+        name: 'manual',
+        available: () => true,
+        send: () => true,
+      },
+    ]);
     assert.equal(fallbackManual, 'manual');
   } finally {
     if (prevRepo === undefined) delete process.env.REPO;
