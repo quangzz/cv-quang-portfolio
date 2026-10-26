@@ -157,6 +157,7 @@ function dispatch(task) {
   if (!['ASSIGNED', 'REWORK'].includes(task.status)) return;
   if (task.attempts >= task.max_attempts) {
     task.status = 'BLOCKED';
+    task.blocked_reason = 'max_attempts';
     return save(task, `Quá ${task.max_attempts} lượt, cần tech lead xử lý`);
   }
   task.attempts += 1;
@@ -180,12 +181,14 @@ export function verify(task) {
   const agentStatus = lines[lines.length - 1] ?? '';
   if (/^STATUS:\s*BLOCKED/.test(agentStatus)) {
     task.status = 'BLOCKED';
+    task.blocked_reason = 'agent';
     return save(task, `Agent dừng: ${agentStatus.replace(/^STATUS:\s*BLOCKED\s*-?\s*/, '')}`);
   }
   if (!/^STATUS:\s*DONE$/.test(agentStatus)) return;
   const wt = worktreeOf(task);
   if (!fs.existsSync(wt)) {
     task.status = 'BLOCKED';
+    task.blocked_reason = 'no_worktree';
     return save(task, `Có báo cáo nhưng không thấy worktree ${wt}`);
   }
   const repoNm = path.join(getRepo(), 'node_modules');
@@ -314,11 +317,58 @@ export function retryReview(task) {
   save(task, 'Xoá review_failed_at để cho phép chạy lại review');
 }
 
-function setVerdict(task, verdict) {
+export function setVerdict(task, verdict) {
+  const v = typeof verdict === 'string' ? verdict.toUpperCase() : '';
+  if (v !== 'APPROVED' && v !== 'REWORK') {
+    throw new Error(`Verdict không hợp lệ: "${verdict}". Chỉ nhận approved hoặc rework`);
+  }
   if (task.status !== 'REVIEW') throw new Error(`${task.id} đang ${task.status}, không ở REVIEW`);
   delete task.review_failed_at;
-  task.status = verdict;
-  save(task, verdict === 'APPROVED' ? 'Claude duyệt, chờ tech lead merge' : 'Claude yêu cầu sửa lại');
+  task.status = v;
+  save(task, v === 'APPROVED' ? 'Claude duyệt, chờ tech lead merge' : 'Claude yêu cầu sửa lại');
+}
+
+export function assign(task) {
+  if (task.status !== 'PLANNED') {
+    throw new Error(`${task.id} đang ở trạng thái ${task.status}, chỉ có thể assign khi đang PLANNED`);
+  }
+  task.status = 'ASSIGNED';
+  save(task, 'Tech lead duyệt đặc tả');
+}
+
+export function reopen(task) {
+  if (task.status !== 'BLOCKED') {
+    throw new Error(`${task.id} đang ${task.status}, không phải BLOCKED`);
+  }
+  if (task.blocked_reason === 'max_attempts') {
+    throw new Error(
+      `${task.id} bị BLOCKED do quá số lượt (max_attempts=${task.max_attempts}). Tech lead cần tăng max_attempts bằng lệnh "extend ${task.id}" để chuyển sang REWORK`
+    );
+  }
+  const allowedReasons = ['agent', 'no_worktree', 'dispatch_failed'];
+  if (!allowedReasons.includes(task.blocked_reason)) {
+    throw new Error(
+      `${task.id} có blocked_reason="${task.blocked_reason ?? 'none'}", reopen chỉ cho phép khi lý do là ${allowedReasons.join(', ')}`
+    );
+  }
+  const report = path.join(taskDir(task.id), `report-${task.attempts}.md`);
+  if (fs.existsSync(report)) {
+    fs.renameSync(report, report.replace(/\.md$/, `.blocked-${Date.now()}.md`));
+  }
+  delete task.blocked_reason;
+  task.status = 'IN_PROGRESS';
+  save(task, `Mở lại lượt ${task.attempts}, dán lại prompt-${task.attempts}.md cho Antigravity`);
+}
+
+export function extend(task, extra = 1) {
+  if (task.status !== 'BLOCKED') {
+    throw new Error(`${task.id} đang ${task.status}, chỉ có thể extend khi đang BLOCKED`);
+  }
+  const add = Number.isInteger(Number(extra)) && Number(extra) > 0 ? Number(extra) : 1;
+  task.max_attempts = (Number(task.max_attempts) || 0) + add;
+  delete task.blocked_reason;
+  task.status = 'REWORK';
+  save(task, `Tech lead tăng max_attempts lên ${task.max_attempts}, chuyển sang REWORK`);
 }
 
 // Merge chỉ khi tech lead tự chạy lệnh này (AGENTS.md mục 1: merge cần duyệt rõ ràng).
@@ -384,23 +434,17 @@ const commands = {
   status,
   tick,
   watch: () => { tick(); setInterval(tick, Number(process.env.WATCH_MS ?? 60000)); },
-  assign: () => one((t) => { t.status = 'ASSIGNED'; save(t, 'Tech lead duyệt đặc tả'); }),
+  assign: () => one(assign),
   dispatch: () => one(dispatch),
   verify: () => one(verify),
-  verdict: () => one((t) => setVerdict(t, arg?.toUpperCase())),
+  verdict: () => one((t) => setVerdict(t, arg)),
   'retry-review': () => one(retryReview),
-  // Mở lại việc BLOCKED vì lý do bên ngoài (không tính thêm lượt); báo cáo cũ được lưu lại để tra cứu.
-  reopen: () => one((t) => {
-    if (t.status !== 'BLOCKED') throw new Error(`${t.id} đang ${t.status}, không phải BLOCKED`);
-    const report = path.join(taskDir(t.id), `report-${t.attempts}.md`);
-    if (fs.existsSync(report)) fs.renameSync(report, report.replace(/\.md$/, `.blocked-${Date.now()}.md`));
-    t.status = 'IN_PROGRESS';
-    save(t, `Mở lại lượt ${t.attempts}, dán lại prompt-${t.attempts}.md cho Antigravity`);
-  }),
+  reopen: () => one(reopen),
+  extend: () => one((t) => extend(t, arg)),
   merge: () => one(merge),
 };
 if (!commands[cmd]) {
-  console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | retry-review <id> | reopen <id> | merge <id>');
+  console.log('Lệnh: status | tick | watch | assign <id> | dispatch <id> | verify <id> | verdict <id> approved|rework | retry-review <id> | reopen <id> | extend <id> | merge <id>');
   process.exit(1);
 }
 commands[cmd]();
