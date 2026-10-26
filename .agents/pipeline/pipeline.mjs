@@ -204,7 +204,6 @@ ${rework ? `\n## Phản hồi review lượt trước (phải xử lý hết)\n$
 
 export function hasJsonError(stdout) {
   if (typeof stdout !== 'string' || !stdout.trim()) return false;
-  if (/"error"\s*:\s*(null|false|0|"")\b/.test(stdout)) return false;
   for (const line of stdout.trim().split(/\r?\n/)) {
     try {
       const parsed = JSON.parse(line.trim());
@@ -213,9 +212,10 @@ export function hasJsonError(stdout) {
   }
   try {
     const parsed = JSON.parse(stdout.trim());
-    if (parsed && typeof parsed === 'object' && Boolean(parsed.error)) return true;
-  } catch {}
-  return /"error"|\berror:/i.test(stdout);
+    return Boolean(parsed && typeof parsed === 'object' && parsed.error);
+  } catch {
+    return false;
+  }
 }
 
 export class ExecutorUncertainError extends Error {

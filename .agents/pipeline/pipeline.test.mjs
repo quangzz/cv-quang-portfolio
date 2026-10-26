@@ -329,8 +329,10 @@ test('verify, merge, lock và status: luồng tự kiểm lưu verified_commit, 
     assert.equal(fs.existsSync(wt), false);
 
     // Kiểm tra hasJsonError
-    assert.equal(hasJsonError('{"error": null}'), false);
-    assert.equal(hasJsonError('{"error": "bad request"}'), true);
+    assert.equal(hasJsonError('0 error: none'), false);
+    assert.equal(hasJsonError('{"error":null}'), false);
+    assert.equal(hasJsonError('{"error":""}'), false);
+    assert.equal(hasJsonError('{"error":"ANTIGRAVITY_LS_ADDRESS is not set"}'), true);
 
     // Kiểm tra khoá .lock chặn truy cập đồng thời và gỡ khoá cũ
     const release = acquireLock(board);
