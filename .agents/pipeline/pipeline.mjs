@@ -225,17 +225,42 @@ function setVerdict(task, verdict) {
 }
 
 // Merge chỉ khi tech lead tự chạy lệnh này (AGENTS.md mục 1: merge cần duyệt rõ ràng).
-function merge(task) {
+export function merge(task) {
+  const repo = getRepo();
   if (task.status !== 'APPROVED') throw new Error(`${task.id} chưa APPROVED`);
-  if (git(['status', '--porcelain'])) throw new Error('Repo chính không sạch, dừng');
-  git(['switch', BASE_BRANCH]);
-  git(['merge', '--no-ff', task.branch, '-m', `merge(${task.id}): ${task.title}`]);
-  const build = spawnSync(BUILD_CMD, { shell: true, cwd: getRepo(), encoding: 'utf8' });
-  if (build.status !== 0) throw new Error('Build sau merge lỗi, kiểm tra trước khi push');
-  removeWorktree(worktreeOf(task));
-  git(['branch', '-d', task.branch]);
+  const curBranch = git(['branch', '--show-current'], repo);
+  if (curBranch !== BASE_BRANCH) {
+    throw new Error(`Repo chính đang ở nhánh "${curBranch}", phải ở nhánh "${BASE_BRANCH}" mới được merge`);
+  }
+  if (git(['status', '--porcelain'], repo)) throw new Error('Repo chính không sạch, dừng');
+  const branchHead = git(['rev-parse', task.branch], repo);
+  if (!task.verified_commit || branchHead !== task.verified_commit) {
+    throw new Error(
+      `Từ chối merge ${task.id}: commit hiện tại của ${task.branch} (${branchHead}) khác verified_commit (${task.verified_commit ?? 'chưa có'})`
+    );
+  }
+  try {
+    git(['merge', '--no-ff', '--no-commit', task.branch], repo);
+  } catch (e) {
+    spawnSync('git', ['merge', '--abort'], { cwd: repo, encoding: 'utf8' });
+    throw new Error(`Merge bị conflict cho ${task.id}, đã abort: ${e.message}`);
+  }
+  const buildCm = process.env.BUILD_CMD ?? BUILD_CMD;
+  const build = spawnSync(buildCm, { shell: true, cwd: repo, encoding: 'utf8' });
+  if (build.status !== 0) {
+    spawnSync('git', ['merge', '--abort'], { cwd: repo, encoding: 'utf8' });
+    throw new Error('Build sau merge lỗi, đã abort merge');
+  }
+  git(['commit', '-m', `merge(${task.id}): ${task.title}`], repo);
   task.status = 'MERGED';
   save(task, `Đã merge vào ${BASE_BRANCH} (chưa push)`);
+  try {
+    const wt = worktreeOf(task);
+    if (fs.existsSync(wt)) removeWorktree(wt, repo);
+    git(['branch', '-d', task.branch], repo);
+  } catch (e) {
+    save(task, `Cảnh báo dọn dẹp sau merge: ${e.message}`);
+  }
 }
 
 function tick() {
@@ -272,7 +297,7 @@ const commands = {
     const report = path.join(taskDir(t.id), `report-${t.attempts}.md`);
     if (fs.existsSync(report)) fs.renameSync(report, report.replace(/\.md$/, `.blocked-${Date.now()}.md`));
     t.status = 'IN_PROGRESS';
-    save(task, `Mở lại lượt ${t.attempts}, dán lại prompt-${t.attempts}.md cho Antigravity`);
+    save(t, `Mở lại lượt ${t.attempts}, dán lại prompt-${t.attempts}.md cho Antigravity`);
   }),
   merge: () => one(merge),
 };
