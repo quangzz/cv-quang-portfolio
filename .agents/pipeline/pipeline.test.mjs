@@ -21,6 +21,8 @@ import {
   reopen,
   safeTick,
   save,
+  selectExecutor,
+  sendToAntigravity,
   setVerdict,
   status,
   validateTask,
@@ -312,6 +314,10 @@ test('verify, merge, lock và status: luồng tự kiểm lưu verified_commit, 
     const verified = load('T-2');
     assert.equal(verified.status, 'REVIEW');
     assert.ok(verified.verified_commit, 'Phải lưu verified_commit');
+    assert.equal(fs.existsSync(path.join(dir, 'diff-1.patch')), true, 'Phải lưu diff-1.patch đầy đủ');
+    const verifyMd = fs.readFileSync(path.join(dir, 'verify-1.md'), 'utf8');
+    assert.match(verifyMd, /## git diff --stat/);
+    assert.ok(verifyMd.includes('diff-1.patch'), 'verify-1.md phải ghi đường dẫn file .patch');
 
     setVerdict(verified, 'approved');
     assert.equal(load('T-2').status, 'APPROVED');
@@ -375,6 +381,84 @@ test('verify, merge, lock và status: luồng tự kiểm lưu verified_commit, 
     else process.env.BOARD = prevBoard;
     if (prevBuild === undefined) delete process.env.BUILD_CMD;
     else process.env.BUILD_CMD = prevBuild;
+    cleanupTempRoot(root);
+  }
+});
+
+test('sendToAntigravity & selectExecutor: kênh 1 lỗi thì dùng kênh 2; mọi kênh lỗi thì rơi về manual', () => {
+  const { root, repo, board } = initTempGitRepo();
+  const prevRepo = process.env.REPO;
+  const prevBoard = process.env.BOARD;
+  process.env.REPO = repo;
+  process.env.BOARD = board;
+  try {
+    const dir = path.join(board, 'T-3');
+    fs.mkdirSync(dir, { recursive: true });
+    const dummyTask = {
+      id: 'T-3',
+      title: 'Test executor fallback',
+      status: 'IN_PROGRESS',
+      branch: 'feat/t-3',
+      files: ['src'],
+      attempts: 1,
+      max_attempts: 3,
+    };
+    save(dummyTask);
+
+    // Ca 1: Kênh 1 lỗi (throw), kênh 2 thành công → trả về tên kênh 2 và ghi executor.log
+    const usedChannel = sendToAntigravity(dummyTask, 'prompt-1.md', [
+      {
+        name: 'EXECUTOR_CMD',
+        available: () => true,
+        send: () => {
+          throw new Error('timeout on channel 1');
+        },
+      },
+      {
+        name: 'agy',
+        available: () => true,
+        send: () => true,
+      },
+      {
+        name: 'manual',
+        available: () => true,
+        send: () => true,
+      },
+    ]);
+    assert.equal(usedChannel, 'agy');
+    const logContent = fs.readFileSync(path.join(dir, 'executor.log'), 'utf8');
+    assert.match(logContent, /\[EXECUTOR_CMD\].*timeout on channel 1/);
+
+    // Ca 2: Mọi kênh tự động đều lỗi → rơi về manual
+    const fallbackManual = selectExecutor(
+      [
+        {
+          name: 'EXECUTOR_CMD',
+          available: () => true,
+          send: () => {
+            throw new Error('fail 1');
+          },
+        },
+        {
+          name: 'agy',
+          available: () => true,
+          send: () => ({ status: 1, stdout: '{"error":"bad"}' }),
+        },
+        {
+          name: 'manual',
+          available: () => true,
+          send: () => true,
+        },
+      ],
+      dummyTask,
+      'prompt-1.md'
+    );
+    assert.equal(fallbackManual, 'manual');
+  } finally {
+    if (prevRepo === undefined) delete process.env.REPO;
+    else process.env.REPO = prevRepo;
+    if (prevBoard === undefined) delete process.env.BOARD;
+    else process.env.BOARD = prevBoard;
     cleanupTempRoot(root);
   }
 });
