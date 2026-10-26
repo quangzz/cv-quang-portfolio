@@ -6,7 +6,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const DEFAULT_REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const getRepo = () => (process.env.REPO ? path.resolve(process.env.REPO) : DEFAULT_REPO);
@@ -165,7 +165,7 @@ export function listTasks(opts = {}) {
 
 export const worktreeOf = (task) => `${getRepo()}_worktree_${task.id.toLowerCase()}`;
 
-function ensureWorktree(task) {
+export function ensureWorktree(task) {
   const repo = getRepo();
   const wt = worktreeOf(task);
   if (!fs.existsSync(wt)) {
@@ -176,7 +176,7 @@ function ensureWorktree(task) {
 }
 
 // Prompt cho agent: đọc từ file để không phải truyền văn bản nhiều dòng qua dòng lệnh Windows.
-function writeAgentPrompt(task, wt) {
+export function writeAgentPrompt(task, wt) {
   const dir = taskDir(task.id);
   const reviewFile = path.join(dir, 'review.md');
   const rework = task.attempts > 1 && fs.existsSync(reviewFile);
@@ -218,7 +218,7 @@ export function hasJsonError(stdout) {
 }
 
 // Gửi việc sang Antigravity. Ưu tiên: lệnh tự cấu hình → agy CLI → agentapi (chạy trong terminal Antigravity) → thủ công.
-function sendToAntigravity(task, promptFile) {
+export function sendToAntigravity(task, promptFile) {
   const short = `Đọc và làm đúng toàn bộ yêu cầu trong file ${promptFile}`;
   const has = (bin) => spawnSync(process.platform === 'win32' ? 'where' : 'which', [bin]).status === 0;
   let cmd;
@@ -605,7 +605,7 @@ export function runCli(argv = process.argv.slice(2)) {
   return commands[cmd]();
 }
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isMain = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   runCli();
 }
