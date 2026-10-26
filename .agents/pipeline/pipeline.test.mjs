@@ -19,6 +19,7 @@ import {
   parseVerdict,
   removeWorktree,
   reopen,
+  safeTick,
   save,
   setVerdict,
   status,
@@ -327,7 +328,36 @@ test('verify, merge, lock và status: luồng tự kiểm lưu verified_commit, 
     // Kiểm tra khoá .lock chặn truy cập đồng thời và gỡ khoá cũ
     const release = acquireLock(board);
     assert.throws(() => acquireLock(board), /đang bị khoá/);
+
+    // Kiểm tra vòng bọc safeTick() của watch không làm sập tiến trình khi bảng việc đang bị khoá .lock
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(' '));
+    try {
+      assert.doesNotThrow(() => safeTick());
+    } finally {
+      console.warn = origWarn;
+    }
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /^\[BỎ QUA VÒNG\] Bảng việc đang bị khoá/);
+
     release();
+
+    // Kiểm tra merge() báo rõ "đã merge rồi" nếu nhánh đã là tổ tiên của stage
+    execFileSync('git', ['branch', 'feat/t-2-merged', 'HEAD'], { cwd: repo, stdio: 'ignore' });
+    const headCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    const mergedTask = {
+      id: 'T-2',
+      title: 'Already merged task',
+      status: 'APPROVED',
+      branch: 'feat/t-2-merged',
+      files: ['src'],
+      attempts: 1,
+      max_attempts: 3,
+      verified_commit: headCommit,
+    };
+    save(mergedTask);
+    assert.throws(() => merge(load('T-2')), /đã merge rồi/);
 
     // Kiểm tra status() không lỗi khi task thiếu branch
     const dirNoBranch = path.join(board, 'R-1');

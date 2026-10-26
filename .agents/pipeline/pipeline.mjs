@@ -519,6 +519,11 @@ export function merge(task) {
       `Từ chối merge ${task.id}: commit hiện tại của ${task.branch} (${branchHead}) khác verified_commit (${task.verified_commit ?? 'chưa có'})`
     );
   }
+  const alreadyMerged =
+    spawnSync('git', ['merge-base', '--is-ancestor', task.branch, 'HEAD'], { cwd: repo }).status === 0;
+  if (alreadyMerged) {
+    throw new Error(`Nhánh ${task.branch} của ${task.id} đã merge rồi vào ${BASE_BRANCH}`);
+  }
   try {
     git(['merge', '--no-ff', '--no-commit', task.branch], repo);
   } catch (e) {
@@ -557,6 +562,14 @@ export function tick() {
   });
 }
 
+export function safeTick() {
+  try {
+    tick();
+  } catch (e) {
+    console.warn(`[BỎ QUA VÒNG] ${e.message}`);
+  }
+}
+
 export function status(rows = listTasks({ allowMissingBranch: true })) {
   if (!rows.length) return console.log('Bảng việc trống.');
   for (const t of rows) {
@@ -573,8 +586,8 @@ export function runCli(argv = process.argv.slice(2)) {
     status: () => status(),
     tick,
     watch: () => {
-      tick();
-      setInterval(tick, Number(process.env.WATCH_MS ?? 60000));
+      safeTick();
+      setInterval(safeTick, Number(process.env.WATCH_MS ?? 60000));
     },
     assign: () => one(assign),
     dispatch: () => one(dispatch),
