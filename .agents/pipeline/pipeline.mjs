@@ -13,11 +13,70 @@ export const getRepo = () => (process.env.REPO ? path.resolve(process.env.REPO) 
 export const getBoard = () => (process.env.BOARD ? path.resolve(process.env.BOARD) : path.join(getRepo(), '.agents', 'tasks'));
 const BASE_BRANCH = 'stage';
 const BUILD_CMD = 'npm run build';
+export const LOCK_STALE_MS = 30 * 60 * 1000;
 
 export const git = (args, cwd = getRepo()) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const taskDir = (id) => path.join(getBoard(), id);
 const now = () => new Date().toISOString();
+
+export function acquireLock(board = getBoard(), staleMs = LOCK_STALE_MS) {
+  fs.mkdirSync(board, { recursive: true });
+  const lockFile = path.join(board, '.lock');
+  const openLock = () => {
+    const fd = fs.openSync(lockFile, 'wx');
+    try {
+      const payload = JSON.stringify({ pid: process.pid, at: now(), ts: Date.now() }) + '\n';
+      fs.writeFileSync(fd, payload, 'utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  };
+  try {
+    openLock();
+  } catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    let isStale = false;
+    try {
+      const st = fs.statSync(lockFile);
+      let lockTime = st.mtimeMs;
+      try {
+        const info = JSON.parse(fs.readFileSync(lockFile, 'utf8'));
+        if (info && typeof info.ts === 'number') lockTime = info.ts;
+        else if (info && info.at) lockTime = Date.parse(info.at) || st.mtimeMs;
+      } catch {}
+      if (Date.now() - lockTime > staleMs) {
+        isStale = true;
+      }
+    } catch (statErr) {
+      if (statErr.code === 'ENOENT') isStale = true;
+    }
+    if (!isStale) {
+      throw new Error(`Bảng việc đang bị khoá tại ${lockFile}`);
+    }
+    console.warn(`[CẢNH BÁO] Khoá ${lockFile} đã quá 30 phút (khoá chết), tự động gỡ khoá.`);
+    try {
+      fs.unlinkSync(lockFile);
+    } catch (unlinkErr) {
+      if (unlinkErr.code !== 'ENOENT') throw unlinkErr;
+    }
+    openLock();
+  }
+  return () => {
+    try {
+      fs.unlinkSync(lockFile);
+    } catch {}
+  };
+}
+
+export function withLock(fn, board = getBoard(), staleMs = LOCK_STALE_MS) {
+  const release = acquireLock(board, staleMs);
+  try {
+    return fn();
+  } finally {
+    release();
+  }
+}
 
 export function removeWorktree(wt, repo = getRepo()) {
   const nm = path.join(wt, 'node_modules');
@@ -83,10 +142,14 @@ export function load(id, opts = {}) {
   return validateTask(task, id, opts);
 }
 
-function save(task, note) {
+export function save(task, note) {
   task.updated_at = now();
   if (note) (task.history ??= []).push({ at: task.updated_at, status: task.status, note });
-  fs.writeFileSync(path.join(taskDir(task.id), 'task.json'), JSON.stringify(task, null, 2) + '\n');
+  const dir = taskDir(task.id);
+  const target = path.join(dir, 'task.json');
+  const tmp = path.join(dir, 'task.json.tmp');
+  fs.writeFileSync(tmp, JSON.stringify(task, null, 2) + '\n', 'utf8');
+  fs.renameSync(tmp, target);
 }
 
 function listTasks() {
@@ -437,26 +500,28 @@ export function merge(task) {
   }
 }
 
-function tick() {
-  for (const t of listTasks()) {
-    try {
-      dispatch(t);
-      verify(t);
-      review(t);
-    } catch (e) {
-      console.error(`[LỖI] ${t.id}: ${e.message}`);
+export function tick() {
+  return withLock(() => {
+    for (const t of listTasks()) {
+      try {
+        dispatch(t);
+        verify(t);
+        review(t);
+      } catch (e) {
+        console.error(`[LỖI] ${t.id}: ${e.message}`);
+      }
     }
-  }
+  });
 }
 
-function status() {
+export function status() {
   const rows = listTasks();
   if (!rows.length) return console.log('Bảng việc trống.');
   for (const t of rows) console.log(`${t.id.padEnd(8)} ${t.status.padEnd(12)} lượt ${t.attempts}/${t.max_attempts}  ${t.branch.padEnd(28)} ${t.title}`);
 }
 
 const [cmd, id, arg] = process.argv.slice(2);
-const one = (fn) => fn(load(id));
+const one = (fn) => withLock(() => fn(load(id)));
 const commands = {
   status,
   tick,
