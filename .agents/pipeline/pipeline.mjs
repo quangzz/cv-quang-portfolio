@@ -246,9 +246,16 @@ export function verify(task) {
   save(task, `Build exit ${build.status}, chờ Claude review`);
 }
 
-function outOfScope(task, wt) {
-  const changed = git(['diff', '--name-only', `${BASE_BRANCH}...HEAD`], wt).split('\n').filter(Boolean);
-  return changed.filter((f) => !task.files.some((allowed) => f === allowed || f.startsWith(allowed.replace(/\/?$/, '/'))));
+const normPath = (p) => String(p).replace(/\\/g, '/').replace(/\/+$/, '');
+
+export function outOfScope(task, wt) {
+  const changed = git(['diff', '--name-only', '--no-renames', `${BASE_BRANCH}...HEAD`], wt)
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(normPath);
+  const allowedList = (task.files ?? []).map(normPath);
+  return changed.filter((f) => !allowedList.some((allowed) => f === allowed || f.startsWith(`${allowed}/`)));
 }
 
 export function parseVerdict(stdout) {
